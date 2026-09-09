@@ -1,0 +1,28 @@
+--BOG MAN HAS HAD ENOUGH--
+by Chris "1600frogs" Brady
+Version 1.0
+
+-DESCRIPTION-
+Bog Man is tired of the noise up above and is ready to do something about it with the help of his faithful axe and trusty shotgun.
+A 10-15 minute long Copper map about ascending from the bog and silencing the evil above.
+
+-NOTES-
+frogsbog.bsp
+Requires Copper mod
+Tested on QSS and Ironwail
+Built with Trenchbroom
+Built in roughly 1 month
+Source included
+
+-RESOURCE CREDITS-
+Textures taken from the Machine Games expansion, Dimension of the Machine
+Small sampling of Ween's "Big Fat Fuck" off of the album Craters of the Sac
+
+-TESTER CREDITS-
+(names taken from Discord, sorry if they change!)
+alexUnder
+Spootnik
+DragonsForLunch
+stickflip
+4LT
+
