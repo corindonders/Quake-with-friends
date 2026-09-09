@@ -9,9 +9,10 @@ import { svc_signonnum, svc_time, svc_updatename, svc_updatefrags,
 	svc_setpause } from './protocol.js';
 import { STAT_TOTALSECRETS, STAT_TOTALMONSTERS, STAT_SECRETS, STAT_MONSTERS,
 	MAX_LIGHTSTYLES, SAVEGAME_COMMENT_LENGTH } from './quakedef.js';
-import { NUM_FOR_EDICT, EDICT_NUM, EDICT_TO_PROG, PR_GetString, pr_global_struct } from './progs.js';
+import { NUM_FOR_EDICT, EDICT_NUM, EDICT_TO_PROG, PR_GetString, pr_global_struct, pr_functions } from './progs.js';
 import { PR_ExecuteProgram } from './pr_exec.js';
-import { ED_NewString, ED_Write, ED_WriteGlobals, ED_ParseGlobals, ED_ParseEdict } from './pr_edict.js';
+import { ED_NewString, ED_Write, ED_WriteGlobals, ED_ParseGlobals, ED_ParseEdict,
+	ED_Alloc, ED_FindField, ED_FindFunction, ED_ParseEpair } from './pr_edict.js';
 import { sv_player } from './sv_phys.js';
 import { FL_GODMODE, FL_NOTARGET,
 	MOVETYPE_WALK, MOVETYPE_FLY, MOVETYPE_NOCLIP } from './sv_phys.js';
@@ -21,7 +22,7 @@ import { Cmd_AddCommand, Cmd_Argc, Cmd_Argv, Cmd_Args, Cmd_ExecuteString,
 import { SV_SpawnServer, SV_SaveSpawnparms, SV_DropClient,
 	SV_WriteClientdataToMessage, current_skill } from './sv_main.js';
 import { sv, svs, host_client, set_host_client,
-	NUM_SPAWN_PARMS, NUM_PING_TIMES } from './server.js';
+	NUM_SPAWN_PARMS, NUM_PING_TIMES, ss_loading } from './server.js';
 import { cls, cl, ca_connected, ca_dedicated, MAX_DEMOS } from './client.js';
 import { key_game, set_key_dest } from './keys.js';
 import { CL_Disconnect, CL_EstablishConnection, CL_NextDemo,
@@ -68,6 +69,8 @@ export function Host_InitCommands() {
 	Cmd_AddCommand( 'fly', Host_Fly_f );
 	Cmd_AddCommand( 'noclip', Host_Noclip_f );
 	Cmd_AddCommand( 'give', Host_Give_f );
+	Cmd_AddCommand( 'summon', Host_Summon_f );
+	Cmd_AddCommand( 'classlist', Host_Classlist_f );
 	Cmd_AddCommand( 'ping', Host_Ping_f );
 	Cmd_AddCommand( 'kick', Host_Kick_f );
 	Cmd_AddCommand( 'save', Host_Savegame_f );
@@ -733,6 +736,154 @@ function Host_Give_f() {
 			break;
 
 	}
+
+}
+
+/*
+======================
+Host_Summon_f
+
+Debug/test command: spawns any entity classname the currently loaded
+progs.dat defines (monster_*, item_*, weapon_*, misc_*, ...) a short
+distance in front of the player, then runs its normal QuakeC spawn
+function -- exactly the same path map-placed entities go through at
+level load, so it works unmodified against any mod's progs.dat.
+(Named "summon" rather than "spawn" -- "spawn" is already the client
+signon-handshake command below.)
+
+Usage: summon <classname> [distance]
+e.g.:  summon monster_ogre
+       summon item_health 96
+======================
+*/
+function Host_Summon_f() {
+
+	if ( cmd_source === src_command ) {
+
+		Cmd_ForwardToServer();
+		return;
+
+	}
+
+	if ( pr_global_struct.deathmatch !== 0 && host_client.privileged === false )
+		return;
+
+	const classname = Cmd_Argv( 1 );
+	if ( classname.length === 0 ) {
+
+		SV_ClientPrintf( 'summon <classname> [distance] - e.g. "summon monster_ogre". Use classlist to see options.\n' );
+		return;
+
+	}
+
+	const func = ED_FindFunction( classname );
+	if ( func == null ) {
+
+		SV_ClientPrintf( 'summon: no "' + classname + '" in the currently loaded progs.dat\n' );
+		return;
+
+	}
+
+	const dist = parseFloat( Cmd_Argv( 2 ) ) || 64;
+
+	const ent = ED_Alloc();
+
+	const classField = ED_FindField( 'classname' );
+	ED_ParseEpair( ent._fieldAccessor, classField, classname );
+
+	// Place it a short distance in front of the player, at eye height,
+	// facing the same way -- physics/gravity (and the spawn function
+	// itself, for monsters that drop-to-floor) settle it from there.
+	const yawRad = sv_player.v.angles[ 1 ] * Math.PI / 180;
+	const ox = sv_player.v.origin[ 0 ] + Math.cos( yawRad ) * dist;
+	const oy = sv_player.v.origin[ 1 ] + Math.sin( yawRad ) * dist;
+	const oz = sv_player.v.origin[ 2 ] + sv_player.v.view_ofs[ 2 ];
+
+	const originField = ED_FindField( 'origin' );
+	ED_ParseEpair( ent._fieldAccessor, originField, ox + ' ' + oy + ' ' + oz );
+
+	const anglesField = ED_FindField( 'angles' );
+	if ( anglesField )
+		ED_ParseEpair( ent._fieldAccessor, anglesField, '0 ' + sv_player.v.angles[ 1 ] + ' 0' );
+
+	pr_global_struct.time = sv.time;
+	pr_global_struct.self = EDICT_TO_PROG( ent );
+
+	// Spawn functions often call precache_model/precache_sound, which the
+	// engine only allows while sv.state === ss_loading (normally just
+	// during the initial level load) -- otherwise a newly-summoned
+	// classname whose assets weren't already used elsewhere in the map
+	// would hard-error instead of spawning. Briefly reopen the loading
+	// state for this one call, same as ED_LoadFromFile does for every
+	// map-placed entity.
+	const prevState = sv.state;
+	sv.state = ss_loading;
+	try {
+
+		PR_ExecuteProgram( pr_functions.indexOf( func ) );
+
+	} finally {
+
+		sv.state = prevState;
+
+	}
+
+	SV_ClientPrintf( 'spawned ' + classname + '\n' );
+
+}
+
+/*
+======================
+Host_Classlist_f
+
+Debug/test command: lists every function name in the currently loaded
+progs.dat containing the given substring -- since a classname's spawn
+function is named exactly after the classname, this doubles as "what
+can I spawn" (e.g. classlist monster_, classlist item_, classlist
+weapon_). With no argument, lists the common classname prefixes.
+======================
+*/
+function Host_Classlist_f() {
+
+	if ( cmd_source === src_command ) {
+
+		Cmd_ForwardToServer();
+		return;
+
+	}
+
+	const filter = Cmd_Argv( 1 ).toLowerCase();
+
+	if ( filter.length === 0 ) {
+
+		SV_ClientPrintf( 'classlist <substring> - lists spawnable classnames, e.g.:\n' );
+		SV_ClientPrintf( '  classlist monster_   classlist item_\n' );
+		SV_ClientPrintf( '  classlist weapon_    classlist misc_\n' );
+		return;
+
+	}
+
+	const matches = [];
+	for ( let i = 0; i < pr_functions.length; i ++ ) {
+
+		const name = PR_GetString( pr_functions[ i ].s_name );
+		if ( name.length > 0 && name.toLowerCase().includes( filter ) )
+			matches.push( name );
+
+	}
+
+	matches.sort();
+
+	if ( matches.length === 0 ) {
+
+		SV_ClientPrintf( 'classlist: no matches for "' + filter + '"\n' );
+		return;
+
+	}
+
+	SV_ClientPrintf( matches.length + ' match(es):\n' );
+	for ( const name of matches )
+		SV_ClientPrintf( '  ' + name + '\n' );
 
 }
 

@@ -662,6 +662,8 @@ export function SV_ReadClientMessage() {
 					else if ( Q_strncasecmp( s, 'ping', 4 ) ) allowed = 1;
 					else if ( Q_strncasecmp( s, 'give', 4 ) ) allowed = 1;
 					else if ( Q_strncasecmp( s, 'ban', 3 ) ) allowed = 1;
+					else if ( Q_strncasecmp( s, 'summon', 6 ) ) allowed = 1;
+					else if ( Q_strncasecmp( s, 'classlist', 9 ) ) allowed = 1;
 
 					if ( allowed === 2 )
 						Cbuf_InsertText( s );
