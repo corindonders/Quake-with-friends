@@ -22,6 +22,7 @@ import { svs, sv, client_t } from '../src/server.js';
 import { Mod_Init, R_InitTextures } from '../src/gl_model.js';
 import { NET_Init, set_listening } from '../src/net_main.js';
 import { net_drivers, set_net_numdrivers, set_net_driverlevel } from '../src/net.js';
+import { PlayerProgress_Init, autosaveActivePlayers } from './player_progress.ts';
 
 // Import WebSocket server driver (loopback-only; the lobby is the only
 // client, relaying a joined player's traffic in from its own public
@@ -196,6 +197,7 @@ async function Host_Init_Server() {
 	Mod_Init();
 	R_InitTextures();
 	SV_Init();
+	PlayerProgress_Init();
 
 	// Set deathmatch mode - this ensures respawn() doesn't restart the entire server
 	// We set the value directly on the imported cvar object (same object that sv_main.js uses)
@@ -324,6 +326,8 @@ function Host_ServerFrame() {
 		const playerCount = countActivePlayers();
 		Sys_Printf('[Heartbeat] time=' + Math.floor(realtime) + ' frames=' + frameCount + ' players=' + playerCount + ' sv.active=' + sv.active + '\n');
 		lastHeartbeat = realtime;
+		// Best-effort autosave in case the process dies without a clean disconnect.
+		if (sv.active) autosaveActivePlayers(svs.clients, svs.maxclients);
 	}
 
 	if (!sv.active) return;

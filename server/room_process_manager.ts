@@ -176,6 +176,8 @@ export async function RoomManager_CreateRoom( config: {
 			'run',
 			'--allow-net',
 			'--allow-read',
+			'--allow-write', // player_progress.ts's Deno KV store (server/data/progress.db)
+			'--unstable-kv',
 			'--config', denoJsonPath,
 			gameServerPath,
 			'-port', String( port ),

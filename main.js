@@ -79,6 +79,16 @@ async function main() {
 
 		await Host_Init( parms );
 
+		// Use the authenticated username as the in-game name. This is also
+		// how the server identifies whose progress to save/restore (see
+		// src/progress_hooks.js) -- no separate identity channel needed,
+		// Quake already sends "name" to the server on connect.
+		if ( session.username ) {
+
+			Cbuf_AddText( 'name "' + session.username + '"\n' );
+
+		}
+
 		// Check URL parameters
 		const urlParams = new URLSearchParams( window.location.search );
 		const mapName = urlParams.get( 'map' );

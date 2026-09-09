@@ -1,6 +1,7 @@
 // Ported from: WinQuake/sv_main.c -- server main program
 
 import { Sys_Error } from './sys.js';
+import { PlayerProgress_OnDisconnect } from './progress_hooks.js';
 import {
 	Con_Printf, Con_DPrintf, SZ_Clear, SZ_Write, SZ_Alloc,
 	MSG_WriteByte, MSG_WriteChar, MSG_WriteShort, MSG_WriteLong,
@@ -1399,6 +1400,9 @@ export function SV_DropClient( crash ) {
 	// Always call ClientDisconnect to clean up the entity
 	// (original Quake skipped this on crash, but that leaves bodies solid/killable)
 	if ( client.edict != null && client.spawned ) {
+
+		// Snapshot stats before ClientDisconnect/QC touches the body further.
+		PlayerProgress_OnDisconnect( client.name, client.edict );
 
 		// call the prog function for removing a client
 		// this will set the body to a dead frame, among other things

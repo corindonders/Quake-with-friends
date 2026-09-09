@@ -26,6 +26,11 @@ switch ( cmd ) {
 		const [ username, password ] = rest;
 		if ( ! username || ! password ) fail( 'Usage: manage_users.ts add <username> <password> [--admin]' );
 		if ( password.length < 8 ) fail( 'Password must be at least 8 characters.' );
+		// The client sets its in-game Quake name to the username on login,
+		// and Quake's "name" command truncates at 15 chars (see Host_Name_f)
+		// -- keep them identical, since the (possibly-truncated) in-game
+		// name is also the key player progress is saved/loaded under.
+		if ( username.length > 15 ) fail( 'Username must be 15 characters or fewer (Quake\'s in-game name limit).' );
 
 		const isAdmin = rest.includes( '--admin' );
 		await createUser( username, password, isAdmin );

@@ -1,6 +1,7 @@
 // Ported from: WinQuake/host_cmd.c
 
 import { Sys_Printf, Sys_Error, Sys_FloatTime } from './sys.js';
+import { PlayerProgress_OnSpawn } from './progress_hooks.js';
 import { Con_Printf, SZ_Write, SZ_Clear,
 	MSG_WriteByte, MSG_WriteShort, MSG_WriteLong, MSG_WriteFloat,
 	MSG_WriteString, MSG_WriteAngle, COM_Parse, com_token } from './common.js';
@@ -1512,6 +1513,8 @@ function Host_Spawn_f() {
 				Sys_Printf( '%s entered the game\n', host_client.name );
 
 			PR_ExecuteProgram( pr_global_struct.PutClientInServer );
+
+			PlayerProgress_OnSpawn( host_client.name, ent );
 
 		}
 
