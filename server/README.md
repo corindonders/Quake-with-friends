@@ -28,8 +28,24 @@ valid session token on every lobby request (list/create/join) — that's the
 gate a client has to pass before it even learns a room exists. It also
 always keeps one persistent room alive: the hub (`HUBWLD`, Copper's own
 `start` map), for players to land in after logging in before picking a
-world, via the in-game "Travel" button (`src/travel_ui.js`, reads
-`mapdb.json`).
+world, via the in-game "Travel" button (`src/travel_ui.js`).
+
+`mapdb.ts` is the map catalog itself -- also Deno KV, seeded once from the
+repo's root `mapdb.json` the first time it's empty, then KV is the source
+of truth (the static file is only a seed/local-testing fallback after
+that). Admins edit it live from `admin.html`; `GET /api/mapdb` (any logged-
+in session, not just admins) is what `maps.html` and the in-game Travel
+menu actually read.
+
+`player_progress.ts` persists each player's health/armor/ammo/weapons to
+Deno KV keyed by username (their account, not a specific room), restoring
+it on their next spawn anywhere. See its own header comment and
+`src/progress_hooks.js` for how it hooks into the shared engine code
+without the engine importing Deno-specific code directly.
+
+`admin.html` is the day-to-day admin surface (accounts, the map catalog,
+active rooms) -- `manage_users.ts` is only needed to bootstrap the first
+admin account before any of that is reachable.
 
 ### Transport: WebSocket, not WebTransport
 
@@ -117,10 +133,11 @@ so no separate scheme config is needed.
 
 Loading `index.html` with no `?map=`/`?room=` now requires login
 (redirects to `login.html`) and then auto-joins the hub. The in-hub
-"Travel" button lists worlds from the root `mapdb.json` and creates/joins
-a room for whichever one is picked — mod dirs are passed straight through
-to the room process the same way `?mod=` works for the browser client
-(`COM_LoadMod`, now Deno-side too, in `server/game_server.js`).
+"Travel" button lists worlds from the live map catalog (`mapdb.ts`,
+editable from `admin.html`) and creates/joins a room for whichever one is
+picked — mod dirs are passed straight through to the room process the
+same way `?mod=` works for the browser client (`COM_LoadMod`, now
+Deno-side too, in `server/game_server.js`).
 
 **Security note:** the token gate is enforced at the lobby only. The room
 processes themselves don't yet re-verify who's connecting — reasonable
