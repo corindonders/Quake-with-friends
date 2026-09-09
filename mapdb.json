@@ -3,6 +3,10 @@
 		"frogsbog": {
 			"title": "Bog Man Has Had Enough",
 			"layers": [ "mods/copper", "mods/frogsbog_v1/copper" ]
+		},
+		"fqrotpst": {
+			"title": "Fantasy Quake: Rise of the Phoenix",
+			"layers": [ "mods/fq" ]
 		}
 	}
 }

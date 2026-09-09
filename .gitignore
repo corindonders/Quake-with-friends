@@ -1,6 +1,8 @@
 # Registered/full Quake game data is copyrighted and personal to each
 # user's own purchase - don't commit it. The shareware pak0.pak is fine
-# (see README) and stays tracked.
-pak1.pak
-pak2.pak
-pak3.pak
+# (see README) and stays tracked. Anchored to the root only - a mod's
+# own pak1.pak (e.g. mods/fq/pak1.pak, a free fan mod's own assets) is
+# unrelated and should stay tracked.
+/pak1.pak
+/pak2.pak
+/pak3.pak

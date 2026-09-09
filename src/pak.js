@@ -596,6 +596,34 @@ export async function COM_LoadMod( dir ) {
 
 	COM_AddModSearchDir( dir + '/' );
 
+	// Optional <dir>/preload.json: a JSON array of extra loose files (e.g.
+	// standalone .mdl files not bundled in any pak) that need to be cached
+	// up front. Most missing assets are caught by the on-demand fetch in
+	// the precache exchange (cl_parse.js), but some models are only
+	// referenced later, straight from QuakeC at runtime (e.g. an on-fire
+	// variant spawned mid-level) via a synchronous lookup with no chance
+	// to fetch-and-retry. Listing them here sidesteps that entirely.
+	const preloadBytes = await COM_TryFetchBytes( dir + '/preload.json' );
+	if ( preloadBytes ) {
+
+		try {
+
+			const list = JSON.parse( new TextDecoder().decode( preloadBytes ) );
+			if ( Array.isArray( list ) ) {
+
+				await Promise.all( list.map( ( f ) => COM_EnsureFile( f ) ) );
+				Sys_Printf( 'Mod: preloaded ' + list.length + ' file(s) from ' + dir + '/preload.json\\n' );
+
+			}
+
+		} catch ( e ) {
+
+			Con_Printf( 'Mod: bad preload.json in ' + dir + '\\n' );
+
+		}
+
+	}
+
 	return result;
 
 }
