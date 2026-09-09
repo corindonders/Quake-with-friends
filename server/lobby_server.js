@@ -46,6 +46,7 @@ import {
 	verifySession, verifyPassword, createSession,
 	listUsers, createUser, deleteUser, setUserPassword, setUserAdmin,
 } from './auth.ts';
+import { listMaps, getMap, setMap, deleteMap } from './mapdb.ts';
 
 // Server configuration
 const CONFIG = {
@@ -343,20 +344,82 @@ function handleWsConnection( socket, address ) {
 // Admin API
 // ---------------------------------------------------------------------------
 
-async function requireAdmin( req ) {
+async function requireLogin( req ) {
 
 	const auth = req.headers.get( 'authorization' ) || '';
 	const token = auth.startsWith( 'Bearer ' ) ? auth.slice( 7 ) : '';
 	const session = await verifySession( token );
 
 	if ( session === null ) return { error: _json( { error: 'Not logged in.' }, 401 ) };
-	if ( session.isAdmin !== true ) return { error: _json( { error: 'Admin access required.' }, 403 ) };
 
 	return { session };
 
 }
 
+async function requireAdmin( req ) {
+
+	const auth = await requireLogin( req );
+	if ( auth.error ) return auth;
+	if ( auth.session.isAdmin !== true ) return { error: _json( { error: 'Admin access required.' }, 403 ) };
+
+	return auth;
+
+}
+
 const USERNAME_PATTERN = /^[a-z0-9_-]{1,15}$/i; // matches Host_Name_f's 15-char in-game name limit
+const MAP_CATEGORIES = [ 'vanilla', 'deathmatch', 'custom', 'mod' ];
+
+/**
+ * Builds/validates a mapdb.ts MapEntry from a request body. If `existing`
+ * is given (PATCH), unset fields keep their previous value -- callers send
+ * only what they changed.
+ */
+function mapEntryFromBody( body, existing ) {
+
+	const base = existing || { title: '', category: 'custom' };
+
+	const title = body.title !== undefined ? String( body.title ).trim() : base.title;
+	if ( ! title ) return { error: 'Title is required.' };
+
+	const category = body.category !== undefined ? String( body.category ) : base.category;
+	if ( ! MAP_CATEGORIES.includes( category ) ) {
+
+		return { error: 'Category must be one of: ' + MAP_CATEGORIES.join( ', ' ) + '.' };
+
+	}
+
+	const entry = { title, category };
+
+	const blurb = body.blurb !== undefined ? String( body.blurb ).trim() : base.blurb;
+	if ( blurb ) entry.blurb = blurb;
+
+	const mod = body.mod !== undefined ? String( body.mod ).trim() : base.mod;
+	if ( mod ) entry.mod = mod;
+
+	const layersSource = body.layers !== undefined ? body.layers : base.layers;
+	if ( Array.isArray( layersSource ) ) {
+
+		const layers = layersSource.map( ( s ) => String( s ).trim() ).filter( ( s ) => s.length > 0 );
+		if ( layers.length > 0 ) entry.layers = layers;
+
+	} else if ( typeof layersSource === 'string' && layersSource.trim().length > 0 ) {
+
+		entry.layers = layersSource.split( ',' ).map( ( s ) => s.trim() ).filter( ( s ) => s.length > 0 );
+
+	}
+
+	const episode = body.episode !== undefined ? body.episode : base.episode;
+	if ( episode != null && episode !== '' ) entry.episode = Number( episode );
+
+	const requiresRegistered = body.requiresRegistered !== undefined ? body.requiresRegistered : base.requiresRegistered;
+	if ( requiresRegistered === true ) entry.requiresRegistered = true;
+
+	const hidden = body.hidden !== undefined ? body.hidden : base.hidden;
+	if ( hidden === true ) entry.hidden = true;
+
+	return { value: entry };
+
+}
 
 async function handleAdminRequest( req, url ) {
 
@@ -456,6 +519,71 @@ async function handleAdminRequest( req, url ) {
 
 	}
 
+	// --- Maps ------------------------------------------------------------
+
+	if ( req.method === 'GET' && path === '/admin/api/maps' ) {
+
+		return _json( { maps: await listMaps( true ) } );
+
+	}
+
+	if ( req.method === 'POST' && path === '/admin/api/maps' ) {
+
+		let body;
+		try { body = await req.json(); } catch ( e ) { return _json( { error: 'Bad request.' }, 400 ); }
+
+		const id = String( body.id || '' ).trim().toLowerCase();
+		if ( ! /^[a-z0-9_]{1,32}$/.test( id ) ) {
+
+			return _json( { error: 'Map ID must be 1-32 characters (letters, numbers, underscore) -- it has to match the actual map/bsp name.' }, 400 );
+
+		}
+
+		if ( await getMap( id ) !== null ) return _json( { error: 'A map with that ID already exists.' }, 409 );
+
+		const entry = mapEntryFromBody( body );
+		if ( entry.error ) return _json( { error: entry.error }, 400 );
+
+		await setMap( id, entry.value );
+		Sys_Printf( 'Admin %s added map %s\n', auth.session.username, id );
+		return _json( { ok: true } );
+
+	}
+
+	const mapMatch = path.match( /^\/admin\/api\/maps\/([^/]+)$/ );
+	if ( mapMatch ) {
+
+		const id = decodeURIComponent( mapMatch[ 1 ] ).toLowerCase();
+
+		if ( req.method === 'PATCH' ) {
+
+			const existing = await getMap( id );
+			if ( existing === null ) return _json( { error: 'No such map.' }, 404 );
+
+			let body;
+			try { body = await req.json(); } catch ( e ) { return _json( { error: 'Bad request.' }, 400 ); }
+
+			const entry = mapEntryFromBody( body, existing );
+			if ( entry.error ) return _json( { error: entry.error }, 400 );
+
+			await setMap( id, entry.value );
+			Sys_Printf( 'Admin %s updated map %s\n', auth.session.username, id );
+			return _json( { ok: true } );
+
+		}
+
+		if ( req.method === 'DELETE' ) {
+
+			const removed = await deleteMap( id );
+			if ( ! removed ) return _json( { error: 'No such map.' }, 404 );
+
+			Sys_Printf( 'Admin %s deleted map %s\n', auth.session.username, id );
+			return _json( { ok: true } );
+
+		}
+
+	}
+
 	// --- Rooms -----------------------------------------------------------
 
 	if ( req.method === 'GET' && path === '/admin/api/rooms' ) {
@@ -513,6 +641,15 @@ function buildHandler() {
 		if ( url.pathname.startsWith( '/admin/api/' ) ) {
 
 			return await handleAdminRequest( req, url );
+
+		}
+
+		if ( req.method === 'GET' && url.pathname === '/api/mapdb' ) {
+
+			const auth = await requireLogin( req );
+			if ( auth.error ) return auth.error;
+
+			return _json( { maps: await listMaps( false ) } );
 
 		}
 

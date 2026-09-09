@@ -168,6 +168,21 @@
 		</section>
 
 		<section>
+			<h2>Maps</h2>
+			<table id="mapsTable">
+				<thead>
+					<tr><th>ID</th><th>Title</th><th>Category</th><th>Mod</th><th>Visible</th><th></th></tr>
+				</thead>
+				<tbody id="mapsBody"></tbody>
+			</table>
+			<div id="mapsEmpty" class="empty" hidden>No maps in the catalog.</div>
+
+			<div style="margin-top:16px;">
+				<button type="button" class="primary" id="addMapBtn">Add map</button>
+			</div>
+		</section>
+
+		<section>
 			<h2>Active Rooms</h2>
 			<table id="roomsTable">
 				<thead>
@@ -196,6 +211,49 @@
 			<div class="actions">
 				<button type="button" class="btn" id="dialogCancel">Cancel</button>
 				<button type="submit" class="primary">Set password</button>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog id="mapDialog" style="width:380px;">
+		<h3 id="mapDialogTitle">Add map</h3>
+		<form id="mapForm">
+			<div class="field">
+				<label for="mapId">ID (matches the map/bsp filename)</label>
+				<input type="text" id="mapId" placeholder="e.g. frogsbog" style="background:#0f0c0a;border:1px solid #332920;color:#d8cfc4;padding:7px 9px;border-radius:4px;font-size:13px;width:100%;">
+			</div>
+			<div class="field">
+				<label for="mapTitle">Title (shown to players)</label>
+				<input type="text" id="mapTitle" required style="background:#0f0c0a;border:1px solid #332920;color:#d8cfc4;padding:7px 9px;border-radius:4px;font-size:13px;width:100%;">
+			</div>
+			<div class="field">
+				<label for="mapCategory">Category</label>
+				<select id="mapCategory" style="background:#0f0c0a;border:1px solid #332920;color:#d8cfc4;padding:7px 9px;border-radius:4px;font-size:13px;width:100%;">
+					<option value="mod">mod</option>
+					<option value="custom">custom</option>
+					<option value="vanilla">vanilla</option>
+					<option value="deathmatch">deathmatch</option>
+				</select>
+			</div>
+			<div class="field">
+				<label for="mapMod">Mod display name (optional)</label>
+				<input type="text" id="mapMod" placeholder="e.g. Copper" style="background:#0f0c0a;border:1px solid #332920;color:#d8cfc4;padding:7px 9px;border-radius:4px;font-size:13px;width:100%;">
+			</div>
+			<div class="field">
+				<label for="mapLayers">Mod dirs to layer in (comma-separated, optional)</label>
+				<input type="text" id="mapLayers" placeholder="e.g. mods/copper" style="background:#0f0c0a;border:1px solid #332920;color:#d8cfc4;padding:7px 9px;border-radius:4px;font-size:13px;width:100%;">
+			</div>
+			<div class="field">
+				<label for="mapBlurb">Blurb (optional)</label>
+				<input type="text" id="mapBlurb" style="background:#0f0c0a;border:1px solid #332920;color:#d8cfc4;padding:7px 9px;border-radius:4px;font-size:13px;width:100%;">
+			</div>
+			<div class="field checkfield">
+				<input type="checkbox" id="mapHidden">
+				<label for="mapHidden" style="margin:0">Hidden from players</label>
+			</div>
+			<div class="actions">
+				<button type="button" class="btn" id="mapDialogCancel">Cancel</button>
+				<button type="submit" class="primary" id="mapDialogSubmit">Save</button>
 			</div>
 		</form>
 	</dialog>
@@ -397,6 +455,170 @@
 
 		} );
 
+		// --- Maps ------------------------------------------------------------
+
+		async function loadMaps() {
+
+			const { maps } = await api( '/admin/api/maps' );
+			const body = document.getElementById( 'mapsBody' );
+			const empty = document.getElementById( 'mapsEmpty' );
+
+			const ids = Object.keys( maps ).sort();
+			body.innerHTML = '';
+			empty.hidden = ids.length > 0;
+
+			for ( const id of ids ) {
+
+				const m = maps[ id ];
+				const tr = document.createElement( 'tr' );
+				tr.innerHTML = `
+					<td><code>${ escapeHTML( id ) }</code></td>
+					<td>${ escapeHTML( m.title ) }</td>
+					<td><span class="badge">${ escapeHTML( m.category ) }</span></td>
+					<td>${ escapeHTML( m.mod || '—' ) }</td>
+					<td></td>
+					<td></td>
+				`;
+
+				const visTd = tr.children[ 4 ];
+				const visBtn = document.createElement( 'button' );
+				visBtn.textContent = m.hidden ? 'Hidden' : 'Visible';
+				if ( m.hidden ) visBtn.style.color = 'var(--text-dim)';
+				visBtn.addEventListener( 'click', () => toggleMapHidden( id, ! m.hidden ) );
+				visTd.appendChild( visBtn );
+
+				const actionsTd = tr.children[ 5 ];
+
+				const editBtn = document.createElement( 'button' );
+				editBtn.textContent = 'Edit';
+				editBtn.addEventListener( 'click', () => openMapDialog( id, m ) );
+				actionsTd.appendChild( editBtn );
+
+				const delBtn = document.createElement( 'button' );
+				delBtn.textContent = 'Delete';
+				delBtn.className = 'danger';
+				delBtn.addEventListener( 'click', () => deleteMapRow( id ) );
+				actionsTd.appendChild( delBtn );
+
+				body.appendChild( tr );
+
+			}
+
+		}
+
+		async function toggleMapHidden( id, hidden ) {
+
+			try {
+
+				await api( '/admin/api/maps/' + encodeURIComponent( id ), {
+					method: 'PATCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify( { hidden } ),
+				} );
+				showStatus( ( hidden ? 'Hid ' : 'Unhid ' ) + id + '.' );
+				loadMaps();
+
+			} catch ( e ) {
+
+				showStatus( e.message, true );
+
+			}
+
+		}
+
+		async function deleteMapRow( id ) {
+
+			if ( ! confirm( 'Remove "' + id + '" from the catalog? (The map file itself is untouched -- this only removes the listing.)' ) ) return;
+
+			try {
+
+				await api( '/admin/api/maps/' + encodeURIComponent( id ), { method: 'DELETE' } );
+				showStatus( 'Removed ' + id + '.' );
+				loadMaps();
+
+			} catch ( e ) {
+
+				showStatus( e.message, true );
+
+			}
+
+		}
+
+		// Add/edit dialog
+
+		const mapDialog = document.getElementById( 'mapDialog' );
+		const mapIdInput = document.getElementById( 'mapId' );
+		let editingMapId = null; // null while adding a new map
+
+		function openMapDialog( id, entry ) {
+
+			editingMapId = id || null;
+			document.getElementById( 'mapDialogTitle' ).textContent = id ? 'Edit map' : 'Add map';
+
+			mapIdInput.value = id || '';
+			mapIdInput.disabled = !! id; // ID is fixed once created -- it has to match the actual map file
+
+			document.getElementById( 'mapTitle' ).value = ( entry && entry.title ) || '';
+			document.getElementById( 'mapCategory' ).value = ( entry && entry.category ) || 'mod';
+			document.getElementById( 'mapMod' ).value = ( entry && entry.mod ) || '';
+			document.getElementById( 'mapLayers' ).value = ( entry && entry.layers ) ? entry.layers.join( ', ' ) : '';
+			document.getElementById( 'mapBlurb' ).value = ( entry && entry.blurb ) || '';
+			document.getElementById( 'mapHidden' ).checked = !! ( entry && entry.hidden );
+
+			mapDialog.showModal();
+
+		}
+
+		document.getElementById( 'addMapBtn' ).addEventListener( 'click', () => openMapDialog( null, null ) );
+		document.getElementById( 'mapDialogCancel' ).addEventListener( 'click', () => mapDialog.close() );
+
+		document.getElementById( 'mapForm' ).addEventListener( 'submit', async ( e ) => {
+
+			e.preventDefault();
+
+			const body = {
+				title: document.getElementById( 'mapTitle' ).value.trim(),
+				category: document.getElementById( 'mapCategory' ).value,
+				mod: document.getElementById( 'mapMod' ).value.trim(),
+				layers: document.getElementById( 'mapLayers' ).value,
+				blurb: document.getElementById( 'mapBlurb' ).value.trim(),
+				hidden: document.getElementById( 'mapHidden' ).checked,
+			};
+
+			try {
+
+				if ( editingMapId ) {
+
+					await api( '/admin/api/maps/' + encodeURIComponent( editingMapId ), {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify( body ),
+					} );
+					showStatus( 'Updated ' + editingMapId + '.' );
+
+				} else {
+
+					const id = mapIdInput.value.trim();
+					await api( '/admin/api/maps', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify( Object.assign( { id }, body ) ),
+					} );
+					showStatus( 'Added ' + id + '.' );
+
+				}
+
+				mapDialog.close();
+				loadMaps();
+
+			} catch ( err ) {
+
+				showStatus( err.message, true );
+
+			}
+
+		} );
+
 		// --- Rooms -----------------------------------------------------------
 
 		async function loadRooms() {
@@ -457,6 +679,7 @@
 		if ( session !== null ) {
 
 			loadUsers().catch( ( e ) => showStatus( e.message, true ) );
+			loadMaps().catch( ( e ) => showStatus( e.message, true ) );
 			loadRooms().catch( ( e ) => showStatus( e.message, true ) );
 			setInterval( () => loadRooms().catch( () => {} ), 15000 );
 

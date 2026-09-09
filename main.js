@@ -6,7 +6,7 @@ import { COM_InitArgv } from './src/common.js';
 import { Host_Init, Host_Frame, Host_Shutdown } from './src/host.js';
 import { COM_FetchPak, COM_AddPack, COM_LoadMod } from './src/pak.js';
 import { Cbuf_AddText } from './src/cmd.js';
-import { requireSession } from './src/auth_client.js';
+import { requireSession, fetchMapdb } from './src/auth_client.js';
 import { WS_SetAuthToken } from './src/net_websocket.js';
 import { TravelUI_Init } from './src/travel_ui.js';
 import { cls, cl } from './src/client.js';
@@ -116,26 +116,13 @@ async function main() {
 		}
 
 		// If no mod was given explicitly but the requested map is listed in
-		// mapdb.json, use the layers it declares (e.g. a map built for a
-		// mod automatically pulls that mod in with it).
+		// the (admin-editable) map catalog, use the layers it declares (e.g.
+		// a map built for a mod automatically pulls that mod in with it).
 		if ( modDirs.length === 0 && mapName ) {
 
-			try {
-
-				const response = await fetch( 'mapdb.json' );
-				if ( response.ok ) {
-
-					const mapdb = await response.json();
-					const entry = mapdb.maps && mapdb.maps[ mapName ];
-					if ( entry && entry.layers ) modDirs = entry.layers;
-
-				}
-
-			} catch ( e ) {
-
-				// no manifest, or it failed to load - fall back to no mod layers
-
-			}
+			const maps = await fetchMapdb();
+			const entry = maps[ mapName ];
+			if ( entry && entry.layers ) modDirs = entry.layers;
 
 		}
 

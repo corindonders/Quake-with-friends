@@ -192,11 +192,6 @@
 </head>
 <body>
 
-	<script type="module">
-		import { requireSession } from './src/auth_client.js';
-		requireSession();
-	</script>
-
 	<header>
 		<img src="icon.svg" alt="">
 		<div>
@@ -219,7 +214,10 @@
 		<a href="index.html">&larr; back to the game</a>
 	</footer>
 
-	<script>
+	<script type="module">
+
+		import { requireSession, fetchMapdb } from './src/auth_client.js';
+		requireSession();
 
 		const SECTIONS = [
 			{ key: 'mod', label: 'Mod Campaigns' },
@@ -290,7 +288,7 @@
 		async function main() {
 
 			const [ mapdb, haveRegistered ] = await Promise.all( [
-				fetch( 'mapdb.json' ).then( ( r ) => r.json() ),
+				fetchMapdb(),
 				hasRegisteredPak()
 			] );
 
@@ -307,7 +305,7 @@
 			}
 
 			const bySection = {};
-			for ( const [ id, entry ] of Object.entries( mapdb.maps ) ) {
+			for ( const [ id, entry ] of Object.entries( mapdb ) ) {
 
 				const key = sectionKeyFor( id, entry );
 				if ( ! bySection[ key ] ) bySection[ key ] = [];

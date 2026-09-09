@@ -1,5 +1,5 @@
 // In-game "Travel" overlay: lets a player leave the hub (or any room) and
-// jump to one of the worlds listed in mapdb.json. Everyone who picks the
+// jump to one of the worlds in the (admin-editable) map catalog. Everyone who picks the
 // same world lands in the same room automatically (see roomIdForMap below),
 // no code-sharing needed -- that's the "load into worlds together" part of
 // the hub.
@@ -7,6 +7,7 @@
 import { Cbuf_AddText } from './cmd.js';
 import { WS_CreateRoom } from './net_websocket.js';
 import { Con_Printf } from './common.js';
+import { fetchMapdb } from './auth_client.js';
 
 let panelEl = null;
 let buttonEl = null;
@@ -43,8 +44,7 @@ async function loadMapdb() {
 
 	if ( mapdbCache ) return mapdbCache;
 
-	const response = await fetch( 'mapdb.json' );
-	mapdbCache = await response.json();
+	mapdbCache = await fetchMapdb();
 	return mapdbCache;
 
 }
@@ -105,7 +105,7 @@ async function renderPanel() {
 	const listEl = panelEl.querySelector( '.tq-travel-list' );
 	listEl.innerHTML = '';
 
-	for ( const [ mapId, entry ] of Object.entries( mapdb.maps ) ) {
+	for ( const [ mapId, entry ] of Object.entries( mapdb ) ) {
 
 		// Only mod campaigns and standalone custom maps are offered as travel
 		// destinations -- vanilla episodes and deathmatch maps are reachable

@@ -66,6 +66,38 @@ export function clearSession() {
 }
 
 /**
+ * Fetches the server-managed map catalog (admin-editable via admin.html) --
+ * { [id]: { title, category, blurb?, mod?, layers?, ... } }. Falls back to
+ * the repo's static mapdb.json if the lobby can't be reached (e.g. testing
+ * a map load with no server up), so a real fetch failure doesn't strand
+ * every map-aware page.
+ */
+export async function fetchMapdb() {
+
+	try {
+
+		const res = await authedFetch( '/api/mapdb' );
+		if ( res.ok ) {
+
+			const body = await res.json();
+			return body.maps || {};
+
+		}
+
+	} catch ( e ) { /* lobby unreachable -- fall through to the static file */ }
+
+	try {
+
+		const res = await fetch( 'mapdb.json' );
+		if ( res.ok ) return ( await res.json() ).maps || {};
+
+	} catch ( e ) { /* no static file either */ }
+
+	return {};
+
+}
+
+/**
  * Redirects to login.html if there's no stored session. Returns the session
  * if present. Doesn't validate the token against the server -- an expired
  * or revoked token just fails later when it's actually used (room join),
