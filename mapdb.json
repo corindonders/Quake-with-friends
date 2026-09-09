@@ -1,11 +1,107 @@
 {
 	"maps": {
+		"start": {
+			"title": "Base",
+			"category": "vanilla",
+			"blurb": "The hub you start from."
+		},
+		"e1m1": { "title": "The Slipgate Complex", "category": "vanilla", "episode": 1 },
+		"e1m2": { "title": "Castle of the Damned", "category": "vanilla", "episode": 1 },
+		"e1m3": { "title": "The Necropolis", "category": "vanilla", "episode": 1 },
+		"e1m4": { "title": "The Grisly Grotto", "category": "vanilla", "episode": 1 },
+		"e1m5": { "title": "Gloom Keep", "category": "vanilla", "episode": 1 },
+		"e1m6": { "title": "The Door to Chthon", "category": "vanilla", "episode": 1 },
+		"e1m7": { "title": "The House of Chthon", "category": "vanilla", "episode": 1 },
+		"e1m8": { "title": "Ziggurat Vertigo", "category": "vanilla", "episode": 1 },
+
+		"e2m1": { "title": "The Installation", "category": "vanilla", "episode": 2, "requiresRegistered": true },
+		"e2m2": { "title": "The Ogre Citadel", "category": "vanilla", "episode": 2, "requiresRegistered": true },
+		"e2m3": { "title": "The Crypt of Decay", "category": "vanilla", "episode": 2, "requiresRegistered": true },
+		"e2m4": { "title": "The Ebon Fortress", "category": "vanilla", "episode": 2, "requiresRegistered": true },
+		"e2m5": { "title": "The Wizard's Manse", "category": "vanilla", "episode": 2, "requiresRegistered": true },
+		"e2m6": { "title": "The Dismal Oubliette", "category": "vanilla", "episode": 2, "requiresRegistered": true },
+		"e2m7": { "title": "Underearth", "category": "vanilla", "episode": 2, "requiresRegistered": true },
+
+		"e3m1": { "title": "Termination Central", "category": "vanilla", "episode": 3, "requiresRegistered": true },
+		"e3m2": { "title": "The Vaults of Zin", "category": "vanilla", "episode": 3, "requiresRegistered": true },
+		"e3m3": { "title": "The Tomb of Terror", "category": "vanilla", "episode": 3, "requiresRegistered": true },
+		"e3m4": { "title": "Satan's Dark Delight", "category": "vanilla", "episode": 3, "requiresRegistered": true },
+		"e3m5": { "title": "Wind Tunnels", "category": "vanilla", "episode": 3, "requiresRegistered": true },
+		"e3m6": { "title": "Chambers of Torment", "category": "vanilla", "episode": 3, "requiresRegistered": true },
+		"e3m7": { "title": "The Haunted Halls", "category": "vanilla", "episode": 3, "requiresRegistered": true },
+
+		"e4m1": { "title": "The Sewage System", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+		"e4m2": { "title": "The Tower of Despair", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+		"e4m3": { "title": "The Elder God Shrine", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+		"e4m4": { "title": "The Palace of Hate", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+		"e4m5": { "title": "Hell's Atrium", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+		"e4m6": { "title": "The Pain Maze", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+		"e4m7": { "title": "Azure Agony", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+		"e4m8": { "title": "The Nameless City", "category": "vanilla", "episode": 4, "requiresRegistered": true },
+
+		"end": {
+			"title": "Shub-Niggurath's Pit",
+			"category": "vanilla",
+			"episode": 4,
+			"requiresRegistered": true,
+			"blurb": "The final boss level."
+		},
+
+		"dm1": { "title": "Place of Two Deaths", "category": "deathmatch", "requiresRegistered": true },
+		"dm2": { "title": "Claustrophobopolis", "category": "deathmatch", "requiresRegistered": true },
+		"dm3": { "title": "The Abandoned Base", "category": "deathmatch", "requiresRegistered": true },
+		"dm4": { "title": "The Bad Place", "category": "deathmatch", "requiresRegistered": true },
+		"dm5": { "title": "The Cistern", "category": "deathmatch", "requiresRegistered": true },
+		"dm6": { "title": "The Dark Zone", "category": "deathmatch", "requiresRegistered": true },
+
+		"baldm6": {
+			"title": "Scrap Metal",
+			"category": "custom",
+			"blurb": "By Benoit \"Bal\" Stordeur."
+		},
+		"edc": {
+			"title": "Eternal Dismemberment Complex",
+			"category": "custom"
+		},
+		"efdm9": {
+			"title": "Electric Fish",
+			"category": "custom"
+		},
+		"naked5": {
+			"title": "Kinky Afro",
+			"category": "custom"
+		},
+		"rapture1": {
+			"title": "imminent boom",
+			"category": "custom",
+			"blurb": "By danimal."
+		},
+		"spinev2": {
+			"title": "Spinal Cord v2",
+			"category": "custom",
+			"blurb": "Official Qonference '98 tournament map."
+		},
+		"ultrav": {
+			"title": "UltraViolence",
+			"category": "custom"
+		},
+		"zed": {
+			"title": "[ Z E D ]",
+			"category": "custom"
+		},
+
 		"frogsbog": {
 			"title": "Bog Man Has Had Enough",
+			"category": "mod",
+			"mod": "Copper",
+			"blurb": "By Chris \"1600frogs\" Brady. Ascend from the bog and silence the evil above.",
 			"layers": [ "mods/copper", "mods/frogsbog_v1/copper" ]
 		},
 		"fqrotpst": {
 			"title": "Fantasy Quake: Rise of the Phoenix",
+			"category": "mod",
+			"mod": "Fantasy Quake",
+			"blurb": "Standalone RPG total-conversion with player classes, spells, and a grappling hook.",
 			"layers": [ "mods/fq" ]
 		}
 	}
