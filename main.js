@@ -72,16 +72,40 @@ async function main() {
 
 		// Check URL parameters
 		const urlParams = new URLSearchParams( window.location.search );
+		const mapName = urlParams.get( 'map' );
 
-		// Layer mod/map directories onto the search path, e.g.
-		// ?mod=copper,frogsbog_v1/copper&map=frogsbog
-		// Directories are layered in order given, each taking priority
-		// over the last (and over the base game) for paks, progs.dat,
-		// and on-demand loose files (maps, sounds, etc).
-		const modDirs = ( urlParams.get( 'mod' ) || '' )
+		// Layer mod/map directories onto the search path, e.g. ?mod=mods/copper&map=frogsbog
+		// Directories are layered in order given, each taking priority over
+		// the last (and over the base game) for paks, progs.dat, and
+		// on-demand loose files (maps, sounds, etc).
+		let modDirs = ( urlParams.get( 'mod' ) || '' )
 			.split( ',' )
 			.map( ( s ) => s.trim() )
 			.filter( ( s ) => s.length > 0 );
+
+		// If no mod was given explicitly but the requested map is listed in
+		// mapdb.json, use the layers it declares (e.g. a map built for a
+		// mod automatically pulls that mod in with it).
+		if ( modDirs.length === 0 && mapName ) {
+
+			try {
+
+				const response = await fetch( 'mapdb.json' );
+				if ( response.ok ) {
+
+					const mapdb = await response.json();
+					const entry = mapdb.maps && mapdb.maps[ mapName ];
+					if ( entry && entry.layers ) modDirs = entry.layers;
+
+				}
+
+			} catch ( e ) {
+
+				// no manifest, or it failed to load - fall back to no mod layers
+
+			}
+
+		}
 
 		for ( const modDir of modDirs ) {
 
@@ -111,8 +135,6 @@ async function main() {
 
 		// Auto-load a map, e.g. ?map=frogsbog (fetched on demand via COM_EnsureFile,
 		// checking mod dirs above before the base game's maps/ folder)
-		const mapName = urlParams.get( 'map' );
-
 		if ( mapName ) {
 
 			Cbuf_AddText( 'map ' + mapName + '\n' );

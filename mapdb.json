@@ -1,0 +1,8 @@
+{
+	"maps": {
+		"frogsbog": {
+			"title": "Bog Man Has Had Enough",
+			"layers": [ "mods/copper", "mods/frogsbog_v1/copper" ]
+		}
+	}
+}
