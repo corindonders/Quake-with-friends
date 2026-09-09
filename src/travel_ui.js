@@ -5,7 +5,7 @@
 // the hub.
 
 import { Cbuf_AddText } from './cmd.js';
-import { WT_CreateRoom } from './net_webtransport.js';
+import { WS_CreateRoom } from './net_websocket.js';
 import { Con_Printf } from './common.js';
 
 let panelEl = null;
@@ -66,10 +66,10 @@ async function travelTo( mapId, entry ) {
 		const lobby = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) || null;
 		if ( ! lobby ) throw new Error( 'No server configured (server-config.js)' );
 
-		const serverUrl = 'https://' + lobby;
+		const serverUrl = ( window.location.protocol === 'https:' ? 'https://' : 'http://' ) + lobby;
 		const roomId = roomIdForMap( mapId );
 
-		await WT_CreateRoom( serverUrl, {
+		await WS_CreateRoom( serverUrl, {
 			map: mapId,
 			mod: ( entry.layers || [] ).join( ',' ),
 			maxPlayers: 16,

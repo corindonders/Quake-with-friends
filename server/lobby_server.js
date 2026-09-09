@@ -1,8 +1,23 @@
 // Three-Quake Lobby Server for Deno
-// Lightweight server that only handles room management
-// Spawns separate game server processes for each room
+// One HTTP(S) server handles everything: login, the room lobby (list/create/
+// join over WebSocket), and relaying gameplay traffic to room processes.
+// Rooms are separate Deno processes (room_process_manager.ts); their own
+// WebSocket listeners are loopback-only (127.0.0.1) -- this lobby is the
+// only thing that ever talks to them directly, relaying bytes for whichever
+// player joined. That means exactly one public port/hostname needs to be
+// reachable (or tunneled) no matter how many rooms exist.
 //
-// Usage: deno run --allow-net --allow-read --allow-run --unstable-net lobby_server.js
+// Usage: deno run --allow-net --allow-read --allow-write --allow-env
+//   --allow-run --unstable-net --unstable-kv lobby_server.js
+//   [-port 4433] [-cert cert.pem -key key.pem] [-pak ../pak0.pak]
+//   [-allow-origin https://yoursite] [-verbose]
+//
+// TLS is optional: pass -cert/-key to serve HTTPS/WSS directly (e.g. a bare
+// port-forwarded deployment), or omit them to serve plain HTTP/WS -- the
+// right choice when a reverse proxy or Cloudflare Tunnel is terminating TLS
+// in front of this process (cloudflared happily speaks plain HTTP to a
+// local origin), and also the easiest way to test locally with no certs at
+// all.
 
 import { Sys_Printf } from './sys_server.ts';
 
@@ -31,9 +46,8 @@ import { verifySession, verifyPassword, createSession } from './auth.ts';
 // Server configuration
 const CONFIG = {
 	port: 4433,
-	httpPort: 4443,
-	certFile: '/etc/letsencrypt/live/wts.mrdoob.com/fullchain.pem',
-	keyFile: '/etc/letsencrypt/live/wts.mrdoob.com/privkey.pem',
+	certFile: '',
+	keyFile: '',
 	pakPath: '/opt/three-quake/pak0.pak',
 	// Comma-separated list of origins allowed to call /login (browser CORS).
 	// Set via -allow-origin, e.g. https://yourname.github.io
@@ -47,8 +61,6 @@ function parseArgs() {
 		const arg = args[ i ];
 		if ( arg === '-port' && args[ i + 1 ] ) {
 			CONFIG.port = parseInt( args[ ++i ], 10 );
-		} else if ( arg === '-httpport' && args[ i + 1 ] ) {
-			CONFIG.httpPort = parseInt( args[ ++i ], 10 );
 		} else if ( arg === '-cert' && args[ i + 1 ] ) {
 			CONFIG.certFile = args[ ++i ];
 		} else if ( arg === '-key' && args[ i + 1 ] ) {
@@ -61,358 +73,297 @@ function parseArgs() {
 	}
 }
 
-// Lobby message types
-const LOBBY_LIST = 0x01;
-const LOBBY_JOIN = 0x02;
-const LOBBY_CREATE = 0x03;
-const LOBBY_ROOMS = 0x81;
-const LOBBY_ERROR = 0x82;
 const ROOM_ID_PATTERN = /^[A-Z0-9]{6}$/;
 const HUB_ROOM_ID = 'HUBWLD';
 
-// QUIC endpoint
-let quicEndpoint = null;
+// ---------------------------------------------------------------------------
+// Login
+// ---------------------------------------------------------------------------
 
-// Per-reader buffer storage for leftover bytes
-const _readerBuffers = new WeakMap();
+// Simple per-IP throttle so brute-forcing passwords isn't free. Not meant to
+// stop a determined attacker, just to raise the cost past "small friend
+// group" scale. Resets are implicit via the sliding window below.
+const _loginAttempts = new Map(); // ip -> array of timestamps (ms)
+const LOGIN_WINDOW_MS = 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 8;
 
-function _getReaderBuffer( reader ) {
-	let buf = _readerBuffers.get( reader );
-	if ( buf == null ) {
-		buf = { data: null, offset: 0 };
-		_readerBuffers.set( reader, buf );
-	}
-	return buf;
+function _isRateLimited( ip ) {
+
+	const now = Date.now();
+	const attempts = ( _loginAttempts.get( ip ) || [] ).filter( ( t ) => now - t < LOGIN_WINDOW_MS );
+	attempts.push( now );
+	_loginAttempts.set( ip, attempts );
+	return attempts.length > LOGIN_MAX_ATTEMPTS;
+
 }
 
-/**
- * Read exactly n bytes from a reader, with proper buffering
- */
-async function readExact( reader, n ) {
-	const result = new Uint8Array( n );
-	let offset = 0;
-	const buf = _getReaderBuffer( reader );
+function _corsHeaders() {
 
-	// First, use any leftover bytes from previous read
-	if ( buf.data !== null && buf.offset < buf.data.length ) {
-		const available = buf.data.length - buf.offset;
-		const bytesToCopy = Math.min( available, n );
-		result.set( buf.data.subarray( buf.offset, buf.offset + bytesToCopy ), 0 );
-		offset = bytesToCopy;
-		buf.offset += bytesToCopy;
+	return {
+		'Access-Control-Allow-Origin': CONFIG.allowOrigin,
+		'Access-Control-Allow-Methods': 'POST, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type',
+		'Content-Type': 'application/json',
+	};
 
-		// Clear buffer if fully consumed
-		if ( buf.offset >= buf.data.length ) {
-			buf.data = null;
-			buf.offset = 0;
-		}
-	}
-
-	// Read more if needed
-	while ( offset < n ) {
-		const { value, done } = await reader.read();
-		if ( done ) return null;
-
-		const bytesToCopy = Math.min( value.length, n - offset );
-		result.set( value.subarray( 0, bytesToCopy ), offset );
-		offset += bytesToCopy;
-
-		// Save leftover bytes for next read
-		if ( bytesToCopy < value.length ) {
-			buf.data = value;
-			buf.offset = bytesToCopy;
-		}
-	}
-
-	return result;
 }
 
-/**
- * Read a framed message: [type:1][length:2][data:N]
- */
-async function readFramedMessage( reader ) {
-	const header = await readExact( reader, 3 );
-	if ( header === null ) return null;
+async function handleLogin( req, address ) {
 
-	const type = header[ 0 ];
-	const length = header[ 1 ] | ( header[ 2 ] << 8 );
+	if ( _isRateLimited( address ) ) {
 
-	if ( length === 0 ) {
-		return { type, data: new Uint8Array( 0 ) };
+		return new Response( JSON.stringify( { error: 'Too many attempts. Try again in a minute.' } ), {
+			status: 429, headers: _corsHeaders(),
+		} );
+
 	}
-
-	const data = await readExact( reader, length );
-	if ( data === null ) return null;
-
-	return { type, data };
-}
-
-/**
- * Send a framed message
- */
-async function sendFramedMessage( writer, type, data ) {
-	const frame = new Uint8Array( 3 + data.length );
-	frame[ 0 ] = type;
-	frame[ 1 ] = data.length & 0xff;
-	frame[ 2 ] = ( data.length >> 8 ) & 0xff;
-	frame.set( data, 3 );
-	await writer.write( frame );
-}
-
-/**
- * Handle a WebTransport session
- */
-async function handleSession( wt, address ) {
-	Sys_Printf( 'Lobby connection from %s\n', address );
 
 	try {
-		await wt.ready;
-		Sys_Printf( 'Session ready for %s, waiting for stream...\n', address );
 
-		// Accept bidirectional stream with timeout
-		const streamReader = wt.incomingBidirectionalStreams.getReader();
-		const streamPromise = streamReader.read();
-		const timeoutPromise = new Promise( ( _, reject ) =>
-			setTimeout( () => reject( new Error( 'Stream accept timeout' ) ), 30000 )
-		);
+		const body = await req.json();
+		const username = String( body.username || '' ).slice( 0, 64 );
+		const password = String( body.password || '' ).slice( 0, 256 );
 
-		let stream;
-		let done;
-		try {
-			const result = await Promise.race( [ streamPromise, timeoutPromise ] );
-			stream = result.value;
-			done = result.done;
-		} catch ( e ) {
-			streamReader.releaseLock();
-			throw e;
+		const user = await verifyPassword( username, password );
+		if ( user === null ) {
+
+			return new Response( JSON.stringify( { error: 'Invalid username or password.' } ), {
+				status: 401, headers: _corsHeaders(),
+			} );
+
 		}
-		streamReader.releaseLock();
 
-		if ( done || stream == null ) {
-			Sys_Printf( 'No stream received from %s\n', address );
-			wt.close();
+		const token = await createSession( user.username, user.isAdmin );
+		Sys_Printf( 'Login: %s from %s\n', user.username, address );
+
+		return new Response( JSON.stringify( { token, username: user.username } ), {
+			status: 200, headers: _corsHeaders(),
+		} );
+
+	} catch ( e ) {
+
+		return new Response( JSON.stringify( { error: 'Bad request.' } ), {
+			status: 400, headers: _corsHeaders(),
+		} );
+
+	}
+
+}
+
+// ---------------------------------------------------------------------------
+// Lobby + relay (WebSocket)
+// ---------------------------------------------------------------------------
+
+async function resolveRoomForJoin( rawRoomId ) {
+
+	const roomId = ( rawRoomId || '' ).trim().toUpperCase();
+	let room = RoomManager_GetRoom( roomId );
+
+	// A valid-looking room ID that doesn't exist (e.g. an expired shared
+	// link) gets a fresh default room rather than a dead end.
+	if ( room === null && ROOM_ID_PATTERN.test( roomId ) ) {
+
+		Sys_Printf( 'Auto-creating room for link ID: %s\n', roomId );
+		await RoomManager_CreateRoom( {
+			map: 'rapture1',
+			maxPlayers: 4,
+			hostName: 'Shared',
+			specificId: roomId,
+		} );
+		room = RoomManager_GetRoom( roomId );
+
+	}
+
+	return room;
+
+}
+
+function handleWsConnection( socket, address ) {
+
+	let phase = 'control'; // 'control' (JSON lobby requests) | 'relay' (raw game bytes)
+	let roomSocket = null;
+
+	socket.addEventListener( 'message', async ( event ) => {
+
+		if ( phase === 'relay' ) {
+
+			if ( typeof event.data !== 'string' && roomSocket && roomSocket.readyState === WebSocket.OPEN ) {
+
+				roomSocket.send( event.data );
+
+			}
 			return;
+
 		}
 
-		Sys_Printf( 'Stream received from %s, reading message...\n', address );
-
-		const writer = stream.writable.getWriter();
-		const reader = stream.readable.getReader();
-
-		// Read lobby message with timeout
-		const msgPromise = readFramedMessage( reader );
-		const msgTimeoutPromise = new Promise( ( _, reject ) =>
-			setTimeout( () => reject( new Error( 'Message read timeout' ) ), 10000 )
-		);
+		if ( typeof event.data !== 'string' ) return; // stray binary before a join -- ignore
 
 		let msg;
 		try {
-			msg = await Promise.race( [ msgPromise, msgTimeoutPromise ] );
+
+			msg = JSON.parse( event.data );
+
 		} catch ( e ) {
-			Sys_Printf( 'Message read error from %s: %s\n', address, e.message );
-			wt.close();
+
+			socket.close();
 			return;
+
 		}
 
-		if ( msg === null ) {
-			Sys_Printf( 'Empty message from %s\n', address );
-			wt.close();
+		const session = await verifySession( msg.token || '' );
+		if ( session === null ) {
+
+			socket.send( JSON.stringify( { error: 'Not logged in. Please log in again.' } ) );
+			Sys_Printf( 'Rejected unauthenticated lobby request from %s\n', address );
 			return;
-		}
-
-		Sys_Printf( 'Received message type %d from %s\n', msg.type, address );
-
-		// Every lobby request must carry a valid session token -- this is the
-		// only gate a client has to pass to learn a room's port/ID, since the
-		// room processes themselves don't (yet) verify who's connecting.
-		async function authenticate( rawToken ) {
-
-			const session = await verifySession( rawToken );
-			if ( session === null ) {
-
-				const errorData = new TextEncoder().encode( 'Not logged in. Please log in again.' );
-				await sendFramedMessage( writer, LOBBY_ERROR, errorData );
-				Sys_Printf( 'Rejected unauthenticated lobby request from %s\n', address );
-
-			}
-			return session;
 
 		}
 
-		switch ( msg.type ) {
-			case LOBBY_LIST: {
+		if ( msg.type === 'list' ) {
 
-				let token = '';
-				try { token = JSON.parse( new TextDecoder().decode( msg.data ) ).token || ''; } catch { /* empty */ }
-				const session = await authenticate( token );
-				if ( session === null ) break;
+			const rooms = RoomManager_ListRooms();
+			socket.send( JSON.stringify( { rooms } ) );
+			Sys_Printf( 'Sent room list to %s (%d rooms)\n', address, rooms.length );
+			return;
 
-				// Send room list
-				const rooms = RoomManager_ListRooms();
-				const json = JSON.stringify( rooms );
-				const data = new TextEncoder().encode( json );
-				await sendFramedMessage( writer, LOBBY_ROOMS, data );
-				Sys_Printf( 'Sent room list to %s (%d rooms)\n', address, rooms.length );
-				break;
-			}
-
-			case LOBBY_CREATE: {
-				// Create new room
-				const configJson = new TextDecoder().decode( msg.data );
-				try {
-					const config = JSON.parse( configJson );
-
-					const session = await authenticate( config.token || '' );
-					if ( session === null ) break;
-
-					const result = await RoomManager_CreateRoom( {
-						map: config.map || 'rapture1',
-						mod: config.mod || '',
-						maxPlayers: config.maxPlayers || 4,
-						hostName: session.username,
-					} );
-
-					if ( result === null ) {
-						const errorMsg = 'Server room limit reached. Try again later.';
-						const errorData = new TextEncoder().encode( errorMsg );
-						await sendFramedMessage( writer, LOBBY_ERROR, errorData );
-						Sys_Printf( 'Room creation failed for %s (limit reached)\n', address );
-					} else {
-						// Get the actual room info (with sanitized map name)
-						const room = RoomManager_GetRoom( result.id );
-						const roomInfo = {
-							id: result.id,
-							port: result.port,
-							map: room !== null ? room.map : ( config.map || 'rapture1' ),
-							mod: room !== null ? room.mod : ( config.mod || '' ),
-							maxPlayers: room !== null ? room.maxPlayers : ( config.maxPlayers || 4 ),
-							hostName: room !== null ? room.hostName : session.username,
-						};
-						const json = JSON.stringify( roomInfo );
-						const data = new TextEncoder().encode( json );
-						await sendFramedMessage( writer, LOBBY_ROOMS, data );
-						Sys_Printf( 'Room %s created on port %d for %s\n', result.id, result.port, address );
-					}
-				} catch ( e ) {
-					const errorData = new TextEncoder().encode( 'Invalid room config' );
-					await sendFramedMessage( writer, LOBBY_ERROR, errorData );
-					Sys_Printf( 'Invalid room config from %s: %s\n', address, e.message );
-				}
-				break;
-			}
-
-			case LOBBY_JOIN: {
-
-				let joinPayload = {};
-				try { joinPayload = JSON.parse( new TextDecoder().decode( msg.data ) ); } catch { /* empty */ }
-
-				const session = await authenticate( joinPayload.token || '' );
-				if ( session === null ) break;
-
-				// Get room info so client knows which port to connect to
-				const roomId = ( joinPayload.roomId || '' ).trim().toUpperCase();
-				let room = RoomManager_GetRoom( roomId );
-				let attemptedRoomAutocreate = false;
-				let roomCreateResult = null;
-
-				// If a valid room ID link points to an expired room, auto-create it.
-				if ( room === null && ROOM_ID_PATTERN.test( roomId ) ) {
-					attemptedRoomAutocreate = true;
-					Sys_Printf( 'Auto-creating room for link ID: %s\n', roomId );
-					roomCreateResult = await RoomManager_CreateRoom( {
-						map: 'rapture1',
-						maxPlayers: 4,
-						hostName: 'Shared',
-						specificId: roomId,
-					} );
-					// Re-check room either way:
-					// - create succeeded (new room)
-					// - create raced with another join and room already exists
-					room = RoomManager_GetRoom( roomId );
-				}
-
-				if ( room === null ) {
-					let errorMsg = 'Room not found. The game may have ended.';
-					if ( attemptedRoomAutocreate === true ) {
-						if ( RoomManager_ListRooms().length >= 10 ) {
-							errorMsg = 'Server room limit reached. Try again later.';
-						} else if ( roomCreateResult === null ) {
-							errorMsg = 'Unable to create room right now. Please try again.';
-						}
-					}
-					const errorData = new TextEncoder().encode( errorMsg );
-					await sendFramedMessage( writer, LOBBY_ERROR, errorData );
-					Sys_Printf( 'Room %s unavailable for %s (%s)\n', roomId, address, errorMsg );
-				} else if ( room.playerCount >= room.maxPlayers ) {
-					// Room is full
-					const errorMsg = 'Room is full (' + room.playerCount + '/' + room.maxPlayers + ' players)';
-					const errorData = new TextEncoder().encode( errorMsg );
-					await sendFramedMessage( writer, LOBBY_ERROR, errorData );
-					Sys_Printf( 'Room %s is full (%d/%d) - rejecting %s\n', roomId, room.playerCount, room.maxPlayers, address );
-				} else {
-					// Send room info with port
-					const roomInfo = {
-						id: room.id,
-						port: room.port,
-						map: room.map,
-						mod: room.mod,
-						maxPlayers: room.maxPlayers,
-						hostName: room.hostName,
-					};
-					const json = JSON.stringify( roomInfo );
-					const data = new TextEncoder().encode( json );
-					await sendFramedMessage( writer, LOBBY_ROOMS, data );
-					Sys_Printf( 'Sent room %s info (port %d) to %s\n', room.id, room.port, address );
-				}
-				break;
-			}
-
-			default:
-				Sys_Printf( 'Unknown lobby message type %d from %s\n', msg.type, address );
 		}
 
-		// Close connection after handling lobby request
-		try {
-			await writer.close();
-		} catch { /* ignore */ }
-		await new Promise( resolve => setTimeout( resolve, 100 ) );
-		wt.close();
+		if ( msg.type === 'create' ) {
 
-	} catch ( error ) {
-		Sys_Printf( 'Session error from %s: %s\n', address, error.message );
-		try { wt.close(); } catch { /* ignore */ }
-	}
+			const result = await RoomManager_CreateRoom( {
+				map: msg.map || 'rapture1',
+				mod: msg.mod || '',
+				maxPlayers: msg.maxPlayers || 4,
+				hostName: session.username,
+				specificId: msg.specificId || undefined,
+			} );
+
+			if ( result === null ) {
+
+				socket.send( JSON.stringify( { error: 'Server room limit reached. Try again later.' } ) );
+				Sys_Printf( 'Room creation failed for %s (limit reached)\n', address );
+				return;
+
+			}
+
+			const room = RoomManager_GetRoom( result.id );
+			socket.send( JSON.stringify( { room: room || {
+				id: result.id, port: result.port, map: msg.map || 'rapture1', mod: msg.mod || '',
+				maxPlayers: msg.maxPlayers || 4, hostName: session.username,
+			} } ) );
+			Sys_Printf( 'Room %s created on port %d for %s\n', result.id, result.port, address );
+			return;
+
+		}
+
+		if ( msg.type === 'join' ) {
+
+			const room = await resolveRoomForJoin( msg.roomId );
+
+			if ( room === null ) {
+
+				socket.send( JSON.stringify( { error: 'Room not found. The game may have ended.' } ) );
+				Sys_Printf( 'Room %s unavailable for %s\n', msg.roomId, address );
+				return;
+
+			}
+
+			if ( room.playerCount >= room.maxPlayers ) {
+
+				socket.send( JSON.stringify( { error: 'Room is full (' + room.playerCount + '/' + room.maxPlayers + ' players)' } ) );
+				return;
+
+			}
+
+			try {
+
+				roomSocket = new WebSocket( 'ws://127.0.0.1:' + room.port + '/ws' );
+				roomSocket.binaryType = 'arraybuffer';
+
+				await new Promise( ( resolve, reject ) => {
+
+					const timeout = setTimeout( () => reject( new Error( 'room connect timeout' ) ), 8000 );
+					roomSocket.addEventListener( 'open', () => { clearTimeout( timeout ); resolve(); } );
+					roomSocket.addEventListener( 'error', () => { clearTimeout( timeout ); reject( new Error( 'room connect failed' ) ); } );
+
+				} );
+
+			} catch ( e ) {
+
+				socket.send( JSON.stringify( { error: 'Could not reach the room server.' } ) );
+				Sys_Printf( 'Relay to room %s failed: %s\n', room.id, e.message );
+				return;
+
+			}
+
+			roomSocket.addEventListener( 'message', ( ev ) => {
+
+				if ( socket.readyState === WebSocket.OPEN ) socket.send( ev.data );
+
+			} );
+			roomSocket.addEventListener( 'close', () => { try { socket.close(); } catch ( e ) { /* ignore */ } } );
+			roomSocket.addEventListener( 'error', () => { try { socket.close(); } catch ( e ) { /* ignore */ } } );
+
+			phase = 'relay';
+			socket.send( JSON.stringify( { ok: true } ) );
+			Sys_Printf( 'Player %s joined room %s\n', session.username, room.id );
+			return;
+
+		}
+
+		socket.send( JSON.stringify( { error: 'Unknown request type' } ) );
+
+	} );
+
+	socket.addEventListener( 'close', () => {
+
+		if ( roomSocket ) { try { roomSocket.close(); } catch ( e ) { /* ignore */ } }
+
+	} );
+
+	socket.addEventListener( 'error', () => {
+
+		if ( roomSocket ) { try { roomSocket.close(); } catch ( e ) { /* ignore */ } }
+
+	} );
+
 }
 
-/**
- * Accept connections
- */
-async function acceptConnections( listener ) {
-	while ( quicEndpoint !== null ) {
-		try {
-			const conn = await listener.accept();
-			const remoteAddr = conn.remoteAddr;
-			const address = remoteAddr.hostname + ':' + remoteAddr.port;
+// ---------------------------------------------------------------------------
+// HTTP entry point
+// ---------------------------------------------------------------------------
 
-			// Handle in background
-			( async () => {
-				try {
-					const wt = await Deno.upgradeWebTransport( conn );
-					await handleSession( wt, address );
-				} catch ( error ) {
-					Sys_Printf( 'Connection error from %s: %s\n', address, error.message );
-					try { conn.close(); } catch { /* ignore */ }
-				}
-			} )();
+function buildHandler() {
 
-		} catch ( error ) {
-			if ( quicEndpoint !== null ) {
-				Sys_Printf( 'Accept error: %s\n', error.message );
-				// Delay before retrying to prevent 100% CPU spin if accept() fails repeatedly
-				await new Promise( resolve => setTimeout( resolve, 100 ) );
-			}
+	return async ( req, info ) => {
+
+		const address = info.remoteAddr.hostname + ':' + info.remoteAddr.port;
+		const url = new URL( req.url );
+
+		if ( req.method === 'OPTIONS' ) {
+
+			return new Response( null, { status: 204, headers: _corsHeaders() } );
+
 		}
-	}
+
+		if ( req.method === 'POST' && url.pathname === '/login' ) {
+
+			return await handleLogin( req, info.remoteAddr.hostname );
+
+		}
+
+		if ( req.headers.get( 'upgrade' ) === 'websocket' && url.pathname === '/ws' ) {
+
+			const { socket, response } = Deno.upgradeWebSocket( req );
+			handleWsConnection( socket, address );
+			return response;
+
+		}
+
+		return new Response( 'Three-Quake lobby server\n', { status: 200 } );
+
+	};
+
 }
 
 /**
@@ -420,34 +371,30 @@ async function acceptConnections( listener ) {
  */
 async function startServer() {
 	Sys_Printf( '========================================\n' );
-	Sys_Printf( 'Three-Quake Lobby Server v1.0\n' );
+	Sys_Printf( 'Three-Quake Lobby Server v2.0 (WebSocket)\n' );
 	Sys_Printf( '========================================\n\n' );
 
 	// Configure room manager
 	RoomManager_SetConfig( {
-		certFile: CONFIG.certFile,
-		keyFile: CONFIG.keyFile,
 		pakPath: CONFIG.pakPath,
 	} );
 
-	// Read TLS certificates
-	const cert = await Deno.readTextFile( CONFIG.certFile );
-	const key = await Deno.readTextFile( CONFIG.keyFile );
+	const serveOptions = { port: CONFIG.port, hostname: '0.0.0.0' };
 
-	// Create QUIC endpoint
-	quicEndpoint = new Deno.QuicEndpoint( {
-		hostname: '0.0.0.0',
-		port: CONFIG.port,
-	} );
+	if ( CONFIG.certFile && CONFIG.keyFile ) {
 
-	const listener = quicEndpoint.listen( {
-		cert,
-		key,
-		alpnProtocols: [ 'h3' ],
-	} );
+		serveOptions.cert = await Deno.readTextFile( CONFIG.certFile );
+		serveOptions.key = await Deno.readTextFile( CONFIG.keyFile );
+		Sys_Printf( 'Lobby server listening on port %d (HTTPS/WSS)\n', CONFIG.port );
 
-	Sys_Printf( 'Lobby server listening on port %d\n', CONFIG.port );
-	Sys_Printf( 'Rooms will spawn on ports 4434-4443\n\n' );
+	} else {
+
+		Sys_Printf( 'Lobby server listening on port %d (HTTP/WS -- no -cert/-key given)\n', CONFIG.port );
+		Sys_Printf( 'This is fine behind a reverse proxy/tunnel that terminates TLS itself.\n' );
+
+	}
+
+	Deno.serve( serveOptions, buildHandler() );
 
 	// Persistent hub room: Copper's own "start" map (its narrative hub level),
 	// always running, exempt from idle cleanup, so there's always somewhere
@@ -483,106 +430,6 @@ async function startServer() {
 		}
 	}, 5 * 60 * 1000 );
 
-	// Login HTTP endpoint runs alongside the QUIC lobby (same certs, different port).
-	startLoginHttpServer( cert, key );
-
-	// Accept connections
-	await acceptConnections( listener );
-}
-
-// ---------------------------------------------------------------------------
-// Login HTTP endpoint
-// ---------------------------------------------------------------------------
-
-// Simple per-IP throttle so brute-forcing passwords isn't free. Not meant to
-// stop a determined attacker, just to raise the cost past "small friend
-// group" scale. Resets are implicit via the sliding window below.
-const _loginAttempts = new Map(); // ip -> array of timestamps (ms)
-const LOGIN_WINDOW_MS = 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 8;
-
-function _isRateLimited( ip ) {
-
-	const now = Date.now();
-	const attempts = ( _loginAttempts.get( ip ) || [] ).filter( ( t ) => now - t < LOGIN_WINDOW_MS );
-	attempts.push( now );
-	_loginAttempts.set( ip, attempts );
-	return attempts.length > LOGIN_MAX_ATTEMPTS;
-
-}
-
-function _corsHeaders() {
-
-	return {
-		'Access-Control-Allow-Origin': CONFIG.allowOrigin,
-		'Access-Control-Allow-Methods': 'POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
-		'Content-Type': 'application/json',
-	};
-
-}
-
-function startLoginHttpServer( cert, key ) {
-
-	Deno.serve( { port: CONFIG.httpPort, cert, key }, async ( req, info ) => {
-
-		if ( req.method === 'OPTIONS' ) {
-
-			return new Response( null, { status: 204, headers: _corsHeaders() } );
-
-		}
-
-		const url = new URL( req.url );
-
-		if ( req.method === 'POST' && url.pathname === '/login' ) {
-
-			const ip = info.remoteAddr.hostname;
-			if ( _isRateLimited( ip ) ) {
-
-				return new Response( JSON.stringify( { error: 'Too many attempts. Try again in a minute.' } ), {
-					status: 429, headers: _corsHeaders(),
-				} );
-
-			}
-
-			try {
-
-				const body = await req.json();
-				const username = String( body.username || '' ).slice( 0, 64 );
-				const password = String( body.password || '' ).slice( 0, 256 );
-
-				const user = await verifyPassword( username, password );
-				if ( user === null ) {
-
-					return new Response( JSON.stringify( { error: 'Invalid username or password.' } ), {
-						status: 401, headers: _corsHeaders(),
-					} );
-
-				}
-
-				const token = await createSession( user.username, user.isAdmin );
-				Sys_Printf( 'Login: %s from %s\n', user.username, ip );
-
-				return new Response( JSON.stringify( { token, username: user.username } ), {
-					status: 200, headers: _corsHeaders(),
-				} );
-
-			} catch ( e ) {
-
-				return new Response( JSON.stringify( { error: 'Bad request.' } ), {
-					status: 400, headers: _corsHeaders(),
-				} );
-
-			}
-
-		}
-
-		return new Response( 'Not found', { status: 404, headers: _corsHeaders() } );
-
-	} );
-
-	Sys_Printf( 'Login HTTPS endpoint listening on port %d\n', CONFIG.httpPort );
-
 }
 
 /**
@@ -595,10 +442,6 @@ async function main() {
 	Deno.addSignalListener( 'SIGTERM', () => {
 		Sys_Printf( 'Received SIGTERM, shutting down...\n' );
 		RoomManager_ShutdownAll();
-		if ( quicEndpoint !== null ) {
-			quicEndpoint.close();
-			quicEndpoint = null;
-		}
 		Deno.exit( 0 );
 	} );
 

@@ -33,15 +33,17 @@ import {
 	Loop_CanSendMessage, Loop_CanSendUnreliableMessage, Loop_Close
 } from './net_loop.js';
 import {
-	WT_Init, WT_Shutdown, WT_Listen,
-	WT_SearchForHosts, WT_Connect, WT_CheckNewConnections,
-	WT_QGetMessage, WT_QSendMessage, WT_SendUnreliableMessage,
-	WT_CanSendMessage, WT_CanSendUnreliableMessage, WT_Close,
-	WT_QueryRooms, WT_CreateRoom
-} from './net_webtransport.js';
+	WS_Init, WS_Shutdown, WS_Listen,
+	WS_SearchForHosts, WS_Connect, WS_CheckNewConnections,
+	WS_QGetMessage, WS_QSendMessage, WS_SendUnreliableMessage,
+	WS_CanSendMessage, WS_CanSendUnreliableMessage, WS_Close,
+	WS_QueryRooms, WS_CreateRoom
+} from './net_websocket.js';
 
-// Re-export for menu room list/creation
-export { WT_QueryRooms, WT_CreateRoom };
+// Re-export for menu room list/creation. Kept as WT_* names so host.js and
+// menu.js (which pass these through by name via M_SetExternals) don't need
+// changes -- these are WebSocket-backed now, see net_websocket.js.
+export { WS_QueryRooms as WT_QueryRooms, WS_CreateRoom as WT_CreateRoom };
 import { MAX_SCOREBOARD } from './quakedef.js';
 
 //============================================================================
@@ -871,23 +873,23 @@ export function NET_Init() {
 	net_drivers[ 0 ].Close = Loop_Close;
 	net_drivers[ 0 ].Shutdown = Loop_Shutdown;
 
-	// Set up the WebTransport driver (driver 1) for multiplayer
-	if ( typeof WebTransport !== 'undefined' ) {
+	// Set up the WebSocket driver (driver 1) for multiplayer
+	if ( typeof WebSocket !== 'undefined' ) {
 
 		set_net_numdrivers( 2 );
-		net_drivers[ 1 ].name = 'WebTransport';
-		net_drivers[ 1 ].Init = WT_Init;
-		net_drivers[ 1 ].Listen = WT_Listen;
-		net_drivers[ 1 ].SearchForHosts = WT_SearchForHosts;
-		net_drivers[ 1 ].Connect = WT_Connect;
-		net_drivers[ 1 ].CheckNewConnections = WT_CheckNewConnections;
-		net_drivers[ 1 ].QGetMessage = WT_QGetMessage;
-		net_drivers[ 1 ].QSendMessage = WT_QSendMessage;
-		net_drivers[ 1 ].SendUnreliableMessage = WT_SendUnreliableMessage;
-		net_drivers[ 1 ].CanSendMessage = WT_CanSendMessage;
-		net_drivers[ 1 ].CanSendUnreliableMessage = WT_CanSendUnreliableMessage;
-		net_drivers[ 1 ].Close = WT_Close;
-		net_drivers[ 1 ].Shutdown = WT_Shutdown;
+		net_drivers[ 1 ].name = 'WebSocket';
+		net_drivers[ 1 ].Init = WS_Init;
+		net_drivers[ 1 ].Listen = WS_Listen;
+		net_drivers[ 1 ].SearchForHosts = WS_SearchForHosts;
+		net_drivers[ 1 ].Connect = WS_Connect;
+		net_drivers[ 1 ].CheckNewConnections = WS_CheckNewConnections;
+		net_drivers[ 1 ].QGetMessage = WS_QGetMessage;
+		net_drivers[ 1 ].QSendMessage = WS_QSendMessage;
+		net_drivers[ 1 ].SendUnreliableMessage = WS_SendUnreliableMessage;
+		net_drivers[ 1 ].CanSendMessage = WS_CanSendMessage;
+		net_drivers[ 1 ].CanSendUnreliableMessage = WS_CanSendUnreliableMessage;
+		net_drivers[ 1 ].Close = WS_Close;
+		net_drivers[ 1 ].Shutdown = WS_Shutdown;
 
 	}
 

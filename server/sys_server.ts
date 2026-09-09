@@ -22,6 +22,7 @@ const _quietLogAllowPatterns: RegExp[] = [
 	/^SV_ReadClientMessage:/,
 	/^Unhandled promise rejection:/,
 	/^WebTransport server listening /,
+	/^WebSocket server listening /,
 	/^WebTransport server driver initialized/,
 	/^NET_Init complete/,
 	/^Lobby server listening/,

@@ -7,7 +7,7 @@ import { Host_Init, Host_Frame, Host_Shutdown } from './src/host.js';
 import { COM_FetchPak, COM_AddPack, COM_LoadMod } from './src/pak.js';
 import { Cbuf_AddText } from './src/cmd.js';
 import { requireSession } from './src/auth_client.js';
-import { WT_SetAuthToken } from './src/net_webtransport.js';
+import { WS_SetAuthToken } from './src/net_websocket.js';
 import { TravelUI_Init } from './src/travel_ui.js';
 import { cls, cl } from './src/client.js';
 import { sv } from './src/server.js';
@@ -30,7 +30,7 @@ async function main() {
 		const session = requireSession();
 		if ( session === null ) return;
 
-		WT_SetAuthToken( session.token );
+		WS_SetAuthToken( session.token );
 
 		Sys_Init();
 
@@ -82,6 +82,13 @@ async function main() {
 		// Check URL parameters
 		const urlParams = new URLSearchParams( window.location.search );
 		const mapName = urlParams.get( 'map' );
+		const explicitRoomId = urlParams.get( 'room' );
+
+		// No explicit map or room requested: we're about to auto-join the hub
+		// below, which is Copper's own "start" map -- the client needs that
+		// mod's assets loaded too, same as the room does server-side.
+		const joiningHub = ! mapName && ! explicitRoomId &&
+			!! ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby );
 
 		// Layer mod/map directories onto the search path, e.g. ?mod=mods/copper&map=frogsbog
 		// Directories are layered in order given, each taking priority over
@@ -91,6 +98,12 @@ async function main() {
 			.split( ',' )
 			.map( ( s ) => s.trim() )
 			.filter( ( s ) => s.length > 0 );
+
+		if ( modDirs.length === 0 && joiningHub ) {
+
+			modDirs = [ 'mods/copper' ];
+
+		}
 
 		// If no mod was given explicitly but the requested map is listed in
 		// mapdb.json, use the layers it declares (e.g. a map built for a
@@ -153,21 +166,17 @@ async function main() {
 		}
 
 		// Check URL parameters for auto-join
-		let roomId = urlParams.get( 'room' );
+		let roomId = explicitRoomId;
 		let serverUrl = urlParams.get( 'server' );
 
 		// No explicit map or room requested: land in the persistent hub room
 		// on the configured lobby server, same as everyone else who just
 		// logged in -- that's the "meet up before picking a world" flow.
-		if ( ! mapName && ! roomId ) {
+		if ( joiningHub ) {
 
-			const lobby = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) || null;
-			if ( lobby ) {
-
-				roomId = 'HUBWLD';
-				serverUrl = 'https://' + lobby;
-
-			}
+			roomId = 'HUBWLD';
+			// Match the page's own protocol -- ws(s) is derived from this.
+			serverUrl = ( window.location.protocol === 'https:' ? 'https://' : 'http://' ) + window.THREE_QUAKE_SERVER.lobby;
 
 		}
 

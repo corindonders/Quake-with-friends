@@ -1,39 +1,58 @@
 # Three-Quake Dedicated Server
 
-A dedicated server for Three-Quake that runs headlessly using Deno and WebTransport.
+A dedicated server for Three-Quake that runs headlessly using Deno and
+WebSocket.
 
 ## Requirements
 
 - [Deno](https://deno.land/) v1.40 or later
 - A copy of `pak0.pak` (and `pak1.pak` for the registered content some mods
   need — see below) from Quake
-- TLS certificates (required for WebTransport and the login endpoint)
+- TLS is *optional* at this layer -- see "Transport: WebSocket, not
+  WebTransport" below for why, and how to deploy without managing certs at
+  all.
 
 ## Lobby + rooms + hub + login (current architecture)
 
-This is what actually runs in production: `lobby_server.js` listens on one
-port and spawns a separate `game_server.js` process per room (each one a
+`lobby_server.js` is the one public-facing process: it handles login,
+the room lobby (list/create/join), and relays gameplay traffic to whichever
+room a player joined. Rooms are separate `game_server.js` processes (each a
 real headless copy of the engine — the same `src/` code the browser runs,
-not a reimplementation). `room_process_manager.ts` manages those child
-processes; `rooms.ts` is an older, unused single-process room registry —
-ignore it.
+not a reimplementation), spawned and managed by `room_process_manager.ts`.
+They listen on `127.0.0.1` only; the lobby is their sole client. `rooms.ts`
+is an older, unused single-process room registry — ignore it.
 
-On top of that: `auth.ts` + `manage_users.ts` add admin-managed login
-accounts (Deno KV, PBKDF2-hashed passwords, no self-signup), and
-`lobby_server.js` requires a valid session token on every lobby request
-(list/create/join) — that's the gate a client has to pass before it even
-learns a room's port. It also always keeps one persistent room alive: the
-hub (`HUBWLD`, Copper's own `start` map), for players to land in after
-logging in before picking a world.
+`auth.ts` + `manage_users.ts` add admin-managed login accounts (Deno KV,
+PBKDF2-hashed passwords, no self-signup). `lobby_server.js` requires a
+valid session token on every lobby request (list/create/join) — that's the
+gate a client has to pass before it even learns a room exists. It also
+always keeps one persistent room alive: the hub (`HUBWLD`, Copper's own
+`start` map), for players to land in after logging in before picking a
+world, via the in-game "Travel" button (`src/travel_ui.js`, reads
+`mapdb.json`).
 
-**Security note:** the token gate is enforced at the lobby only. The room
-processes themselves (`game_server.js` / `net_webtransport_server.ts`)
-don't yet re-verify who's connecting — reasonable for a small trusted group
-where room ports/IDs are never listed anywhere except an authenticated
-lobby response, but worth knowing if you ever open this beyond people you
-trust. `auth.ts` already has `createRoomTicket`/`verifyRoomTicket` (HMAC via
-`THREE_QUAKE_SECRET`) ready for wiring into the room handshake if you want
-to close that gap later.
+### Transport: WebSocket, not WebTransport
+
+Earlier revisions of this server used WebTransport (HTTP/3 + QUIC). It's
+since been replaced with plain WebSocket, because **WebTransport cannot be
+proxied through a Cloudflare Tunnel** (or most reverse proxies) — Cloudflare
+terminates HTTP/3 at its edge and speaks HTTP/1.1 or HTTP/2 to the origin,
+so the end-to-end QUIC session WebTransport requires can never reach a
+tunneled server. WebSockets proxy through Cloudflare Tunnel with zero
+special config, which is the deployment this project actually targets (a
+homelab/Proxmox box, no port-forwarding, no cert management — Cloudflare's
+edge cert covers it). The old WebTransport code
+(`src/net_webtransport.js`, `server/net_webtransport_server.ts`) is left in
+place but unused, only still referenced by the legacy prototype below.
+
+One consequence: **room processes need no TLS certs of their own** (see
+Requirements above) — they're loopback-only, and the lobby is the only
+thing that ever connects to them, relaying whichever public connection
+they came from. Only the lobby itself needs a cert, and only if you're not
+putting a TLS-terminating proxy (Cloudflare Tunnel, nginx, Caddy, etc.) in
+front of it — pass `-cert`/`-key` for that direct-exposure case, or omit
+them entirely to serve plain HTTP/WS (fine behind a proxy, and the easiest
+way to test locally with no certs at all).
 
 ### 1. Create accounts
 
@@ -46,53 +65,77 @@ deno run --allow-read --allow-write --unstable-kv manage_users.ts list
 
 Accounts live in `server/data/users.db` (Deno KV, gitignored — never commit it).
 
-### 2. Generate TLS certs (dev) and set the shared secret
+### 2. Run the lobby
+
+Local dev (no certs, talks plain HTTP/WS — point a plain `http://` client at it):
 
 ```bash
-openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
-export THREE_QUAKE_SECRET=$(openssl rand -hex 32)   # needed even though room tickets aren't checked yet
+export THREE_QUAKE_SECRET=$(openssl rand -hex 32)   # reserved for future per-room ticket verification
+deno run --allow-net --allow-read --allow-write --allow-env --allow-run \
+  --unstable-kv --config deno.json lobby_server.js \
+  -port 4433 -pak ../pak0.pak -allow-origin "*" -verbose
 ```
 
-### 3. Run the lobby
+Deployed behind Cloudflare Tunnel (same — the tunnel handles TLS, so the
+lobby still serves plain HTTP/WS on localhost; point `cloudflared`'s
+ingress at `http://localhost:4433`):
 
 ```bash
 deno run --allow-net --allow-read --allow-write --allow-env --allow-run \
-  --unstable-net --unstable-kv --config deno.json lobby_server.js \
-  -port 4433 -httpport 4443 -cert cert.pem -key key.pem -pak ../pak0.pak \
-  -allow-origin https://yourname.github.io
+  --unstable-kv --config deno.json lobby_server.js \
+  -port 4433 -pak ../pak0.pak -allow-origin https://yourname.github.io
 ```
 
-- `-port` — WebTransport lobby port (rooms spawn on 4434+)
-- `-httpport` — HTTPS login endpoint (`POST /login`, same certs)
+Direct exposure with your own cert (no proxy in front):
+
+```bash
+deno run --allow-net --allow-read --allow-write --allow-env --allow-run \
+  --unstable-kv --config deno.json lobby_server.js \
+  -port 4433 -cert cert.pem -key key.pem -pak ../pak0.pak -allow-origin https://yourname.github.io
+```
+
+- `-port` — the one public port: login (`POST /login`), lobby, and relay all share it
+- `-cert`/`-key` — optional; omit when a reverse proxy/tunnel terminates TLS for you
 - `-allow-origin` — CORS origin allowed to call `/login` (your deployed client's origin)
 - `-verbose` (or `THREE_QUAKE_VERBOSE=1`) — full logs instead of the quiet allowlist in `sys_server.ts`
 - pak1.pak/pak2.pak next to `pak0.pak` are picked up automatically if present (registered content)
 
-### 4. Point the client at it
+### 3. Point the client at it
 
 Edit `server-config.js` at the repo root:
 
 ```js
 window.THREE_QUAKE_SERVER = {
-	lobby: 'yourdomain.com:4433',
-	loginUrl: 'https://yourdomain.com:4443/login',
+	lobby: 'yourdomain.com:4433', // or localhost:4433 for local dev
 };
 ```
 
+The client derives ws(s):// and http(s):// from whichever protocol the
+page itself was loaded with (a local `http://` dev page talks plain
+`ws://`/`http://`; a deployed `https://` page talks `wss://`/`https://`),
+so no separate scheme config is needed.
+
 Loading `index.html` with no `?map=`/`?room=` now requires login
 (redirects to `login.html`) and then auto-joins the hub. The in-hub
-"Travel" button (`src/travel_ui.js`) lists worlds from the root
-`mapdb.json` and creates/joins a room for whichever one is picked — mod
-dirs are passed straight through to the room process the same way
-`?mod=` works for the browser client (`COM_LoadMod`, now Deno-side too).
+"Travel" button lists worlds from the root `mapdb.json` and creates/joins
+a room for whichever one is picked — mod dirs are passed straight through
+to the room process the same way `?mod=` works for the browser client
+(`COM_LoadMod`, now Deno-side too, in `server/game_server.js`).
+
+**Security note:** the token gate is enforced at the lobby only. The room
+processes themselves don't yet re-verify who's connecting — reasonable
+since they're loopback-only and unreachable except via the lobby's relay,
+but worth knowing. `auth.ts` already has `createRoomTicket`/
+`verifyRoomTicket` (HMAC via `THREE_QUAKE_SECRET`) ready for wiring into
+the relay handshake if you want to harden that further.
 
 ## Legacy prototype (`main.ts` / `host_server.ts`)
 
 The rest of this document (below) describes an earlier, incomplete
 single-process prototype (`main.ts`, `host_server.ts`,
 `net_webtransport_server_test.ts`) that never got full QuakeC/physics
-integration — superseded by the lobby/room architecture above. Left as-is;
-not the thing to run.
+integration, and used WebTransport besides — superseded by the lobby/room
+architecture above. Left as-is; not the thing to run.
 
 ## Quick Start
 

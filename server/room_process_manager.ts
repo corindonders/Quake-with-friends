@@ -43,8 +43,6 @@ const roomProcesses = new Map<string, RoomProcess>();
 const usedPorts = new Set<number>();
 
 // Configuration (set by main server)
-let certFile = '/etc/letsencrypt/live/wts.mrdoob.com/fullchain.pem';
-let keyFile = '/etc/letsencrypt/live/wts.mrdoob.com/privkey.pem';
 let pakPath = '/opt/three-quake/pak0.pak';
 // Default to whatever `deno` binary is currently running the lobby, rather
 // than a hardcoded prod path -- portable across machines/OSes; still
@@ -52,16 +50,14 @@ let pakPath = '/opt/three-quake/pak0.pak';
 let denoPath = Deno.execPath();
 
 /**
- * Configure paths for room servers
+ * Configure paths for room servers. Room processes are WebSocket-only and
+ * loopback-only (127.0.0.1) -- the lobby is their sole client -- so they
+ * don't need TLS certs of their own; only pakPath/denoPath matter here.
  */
 export function RoomManager_SetConfig( config: {
-	certFile?: string;
-	keyFile?: string;
 	pakPath?: string;
 	denoPath?: string;
 } ): void {
-	if ( config.certFile != null ) certFile = config.certFile;
-	if ( config.keyFile != null ) keyFile = config.keyFile;
 	if ( config.pakPath != null ) pakPath = config.pakPath;
 	if ( config.denoPath != null ) denoPath = config.denoPath;
 }
@@ -172,20 +168,20 @@ export async function RoomManager_CreateRoom( config: {
 			return null;
 		}
 
-		// Spawn dedicated server process for this room
+		// Spawn dedicated server process for this room. No -cert/-key: room
+		// processes listen on 127.0.0.1 only and are never reached directly
+		// from outside the machine -- only the lobby connects to them, to
+		// relay a joined player's traffic.
 		const args = [
 			'run',
 			'--allow-net',
 			'--allow-read',
-			'--unstable-net',
 			'--config', denoJsonPath,
 			gameServerPath,
 			'-port', String( port ),
 			'-maxclients', String( config.maxPlayers ),
 			'-map', safeMap,
 			'-pak', pakPath,
-			'-cert', certFile,
-			'-key', keyFile,
 			'-room', id,  // Pass room ID so process can identify itself
 		];
 		if ( safeMod.length > 0 ) args.push( '-mod', safeMod );
@@ -250,9 +246,9 @@ export async function RoomManager_CreateRoom( config: {
 								room.lastOutputTime = Date.now();
 							}
 
-							// Detect when WebTransport server is actually listening
-							// This is the signal that clients can now connect
-							if ( line.includes( 'WebTransport server listening' ) ) {
+							// Detect when the room's WebSocket server is actually
+							// listening -- the signal that the lobby can now relay to it.
+							if ( line.includes( 'WebSocket server listening' ) ) {
 								serverReady = true;
 							}
 

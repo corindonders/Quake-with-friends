@@ -71,8 +71,14 @@ let m_save_demonum = 0;
 let lanConfig_cursor = 0;
 let lanConfig_joinname = ''; // Room code or full URL (max 64 chars)
 
-// Default WebTransport server (can be overridden by URL param)
-const DEFAULT_WT_SERVER = 'https://wts.mrdoob.com:4433';
+// Default multiplayer server (can be overridden by URL param)
+function DEFAULT_WT_SERVER() {
+
+	return ( typeof window !== 'undefined' && window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby )
+		? 'https://' + window.THREE_QUAKE_SERVER.lobby
+		: 'https://localhost:4433';
+
+}
 
 // Room list state
 let slist_rooms = []; // Array of {id, name, map, playerCount, maxPlayers}
@@ -95,9 +101,9 @@ async function M_FetchRooms() {
 	slist_rooms = [];
 
 	// Check if WebTransport is available before attempting
-	if ( typeof WebTransport === 'undefined' ) {
+	if ( typeof WebSocket === 'undefined' ) {
 
-		alert( 'Multiplayer requires a browser with WebTransport support (Chrome 97+, Edge 97+, Firefox 114+, or Opera 83+).' );
+		alert( 'Multiplayer requires a browser with WebSocket support (virtually all modern browsers).' );
 		M_Menu_Main_f();
 		return;
 
@@ -106,7 +112,7 @@ async function M_FetchRooms() {
 	try {
 
 		const params = new URLSearchParams( window.location.search );
-		const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER;
+		const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER();
 
 		if ( ! _WT_QueryRooms ) {
 
@@ -1157,7 +1163,7 @@ function M_LanConfig_Key( key ) {
 				m_entersound = true;
 
 				const params = new URLSearchParams( window.location.search );
-				const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER;
+				const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER();
 
 				// Always join through the lobby using room ID.
 				// This avoids connecting to stale room-port data from an old room list.
@@ -1381,16 +1387,16 @@ function M_GameOptions_Key( key ) {
 				if ( _WT_CreateRoom ) {
 
 					// Check if WebTransport is available before attempting
-					if ( typeof WebTransport === 'undefined' ) {
+					if ( typeof WebSocket === 'undefined' ) {
 
-						alert( 'Multiplayer requires a browser with WebTransport support (Chrome 97+, Edge 97+, Firefox 114+, or Opera 83+).' );
+						alert( 'Multiplayer requires a browser with WebSocket support (virtually all modern browsers).' );
 						M_Menu_Main_f();
 						return;
 
 					}
 
 					const params = new URLSearchParams( window.location.search );
-					const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER;
+					const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER();
 
 					if ( _SCR_BeginLoadingPlaque ) _SCR_BeginLoadingPlaque();
 

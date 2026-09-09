@@ -62,7 +62,11 @@ export function requireSession() {
  */
 export async function login( username, password ) {
 
-	const loginUrl = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.loginUrl ) || 'https://localhost:4443/login';
+	const lobby = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) || 'localhost:4433';
+	// Match the page's own protocol: an http (local dev) page talks plain
+	// http to the lobby, an https (deployed) page talks https.
+	const scheme = location.protocol === 'https:' ? 'https://' : 'http://';
+	const loginUrl = scheme + lobby + '/login';
 
 	let response;
 	try {

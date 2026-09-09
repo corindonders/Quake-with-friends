@@ -1,8 +1,11 @@
 // Three-Quake Game Server for Deno
 // Uses the existing JavaScript game modules from src/
 //
-// Local dev:  deno run --allow-net --allow-read --unstable-net --config ../deno.json game_server.js
-// Production: deno run --allow-net --allow-read --unstable-net --config /opt/three-quake/deno.json /opt/three-quake/server/game_server.js
+// Local dev:  deno run --allow-net --allow-read --config ../deno.json game_server.js
+// Production: deno run --allow-net --allow-read --config /opt/three-quake/deno.json /opt/three-quake/server/game_server.js
+//
+// This process is spawned by, and only ever talked to by, the lobby process
+// (room_process_manager.ts) -- it listens on 127.0.0.1 only. No TLS needed.
 
 import { Sys_Printf, Sys_FloatTime } from '../src/sys.js';
 import { COM_FetchPak, COM_AddPack, COM_SetLooseFileBasePath, COM_EnsureFile, COM_LoadMod } from '../src/pak.js';
@@ -20,28 +23,28 @@ import { Mod_Init, R_InitTextures } from '../src/gl_model.js';
 import { NET_Init, set_listening } from '../src/net_main.js';
 import { net_drivers, set_net_numdrivers, set_net_driverlevel } from '../src/net.js';
 
-// Import WebTransport server driver
+// Import WebSocket server driver (loopback-only; the lobby is the only
+// client, relaying a joined player's traffic in from its own public
+// connection -- see server/lobby_server.js and src/net_websocket.js)
 import {
-	WT_Init as WT_Server_Init,
-	WT_Listen,
-	WT_CheckNewConnections,
-	WT_QGetMessage,
-	WT_QSendMessage,
-	WT_SendUnreliableMessage,
-	WT_CanSendMessage,
-	WT_CanSendUnreliableMessage,
-	WT_Close,
-	WT_Shutdown,
-	WT_SetConfig,
-	WT_SearchForHosts,
-	WT_SetDriverLevel,
-	WT_SetSocketAllocator,
-	WT_SetMapCallbacks,
-	WT_SetDirectMode,
-	WT_SetSocketFreer,
-	WT_SetMaxClientsCallback,
-	WT_GetMaxPendingWrites,
-} from './net_webtransport_server.ts';
+	WS_Init as WS_Server_Init,
+	WS_Listen,
+	WS_CheckNewConnections,
+	WS_QGetMessage,
+	WS_QSendMessage,
+	WS_SendUnreliableMessage,
+	WS_CanSendMessage,
+	WS_CanSendUnreliableMessage,
+	WS_Close,
+	WS_Shutdown,
+	WS_SetConfig,
+	WS_SearchForHosts,
+	WS_SetDriverLevel,
+	WS_SetSocketAllocator,
+	WS_SetMapCallbacks,
+	WS_SetSocketFreer,
+	WS_SetMaxClientsCallback,
+} from './net_websocket_server.ts';
 import { NET_NewQSocket, NET_FreeQSocket } from '../src/net_main.js';
 
 // Reduce log write volume in production. Keep only allowlisted lines.
@@ -53,17 +56,16 @@ globalThis.addEventListener('unhandledrejection', (event) => {
 	event.preventDefault(); // Prevent default crash behavior
 });
 
-// Server configuration
+// Server configuration. No cert/key: this process listens on 127.0.0.1 only
+// (see startNetworking below) -- the lobby process is its sole client and
+// relays a joined player's traffic in from its own public TLS connection.
 const CONFIG = {
 	pakPath: '../pak0.pak',
 	port: 4433,
-	certFile: '/etc/letsencrypt/live/wts.mrdoob.com/fullchain.pem',
-	keyFile: '/etc/letsencrypt/live/wts.mrdoob.com/privkey.pem',
 	maxClients: 4,
 	defaultMap: 'start',
 	mod: '',              // Comma-separated mod dirs, e.g. "mods/copper,mods/frogsbog_v1/copper"
 	roomId: null,        // Room ID if spawned by lobby server
-	directMode: false,   // Skip lobby protocol, accept connections directly
 	idleTimeout: 300,    // Seconds to wait before exiting when empty (room mode)
 };
 
@@ -82,15 +84,8 @@ function parseArgs() {
 			CONFIG.pakPath = args[++i];
 		} else if (arg === '-mod' && args[i + 1]) {
 			CONFIG.mod = args[++i];
-		} else if (arg === '-cert' && args[i + 1]) {
-			CONFIG.certFile = args[++i];
-		} else if (arg === '-key' && args[i + 1]) {
-			CONFIG.keyFile = args[++i];
 		} else if (arg === '-room' && args[i + 1]) {
 			CONFIG.roomId = args[++i];
-			CONFIG.directMode = true; // Room servers use direct mode
-		} else if (arg === '-direct') {
-			CONFIG.directMode = true;
 		} else if (arg === '-idletimeout' && args[i + 1]) {
 			CONFIG.idleTimeout = parseInt(args[++i], 10);
 		}
@@ -151,17 +146,9 @@ async function Host_Init_Server() {
 
 	// Initialize network
 	Sys_Printf('Configuring network...\n');
-	WT_SetConfig({
+	WS_SetConfig({
 		port: CONFIG.port,
-		certFile: CONFIG.certFile,
-		keyFile: CONFIG.keyFile,
 	});
-
-	// If running as a room server, use direct mode (skip lobby protocol)
-	if (CONFIG.directMode) {
-		WT_SetDirectMode(true);
-		Sys_Printf('Direct mode enabled (room server)\n');
-	}
 
 	// Initialize base networking (sets up loopback driver 0)
 	NET_Init();
@@ -169,24 +156,24 @@ async function Host_Init_Server() {
 	// Enable listening mode (dedicated server accepts connections)
 	set_listening(true);
 
-	// Register server WebTransport driver (driver 1)
+	// Register server WebSocket driver (driver 1) -- loopback-only, see CONFIG comment above
 	set_net_numdrivers(2);
 	net_drivers[1] = {
-		name: 'WebTransport Server',
+		name: 'WebSocket Server',
 		initialized: false,
 		controlSock: null,
-		Init: WT_Server_Init,
-		Listen: WT_Listen,
-		SearchForHosts: WT_SearchForHosts,
+		Init: WS_Server_Init,
+		Listen: WS_Listen,
+		SearchForHosts: WS_SearchForHosts,
 		Connect: () => null, // Server doesn't connect out
-		CheckNewConnections: WT_CheckNewConnections,
-		QGetMessage: WT_QGetMessage,
-		QSendMessage: WT_QSendMessage,
-		SendUnreliableMessage: WT_SendUnreliableMessage,
-		CanSendMessage: WT_CanSendMessage,
-		CanSendUnreliableMessage: WT_CanSendUnreliableMessage,
-		Close: WT_Close,
-		Shutdown: WT_Shutdown,
+		CheckNewConnections: WS_CheckNewConnections,
+		QGetMessage: WS_QGetMessage,
+		QSendMessage: WS_QSendMessage,
+		SendUnreliableMessage: WS_SendUnreliableMessage,
+		CanSendMessage: WS_CanSendMessage,
+		CanSendUnreliableMessage: WS_CanSendUnreliableMessage,
+		Close: WS_Close,
+		Shutdown: WS_Shutdown,
 	};
 
 	// Initialize the server driver
@@ -196,13 +183,13 @@ async function Host_Init_Server() {
 		net_drivers[1].controlSock = controlSocket;
 	}
 
-	// Set driver level to 1 (WebTransport) for server operations
+	// Set driver level to 1 (WebSocket) for server operations
 	set_net_driverlevel(1);
-	WT_SetDriverLevel(1);
+	WS_SetDriverLevel(1);
 
-	// Pass the socket allocator and freer to the WebTransport driver so it uses the shared pool
-	WT_SetSocketAllocator(NET_NewQSocket);
-	WT_SetSocketFreer(NET_FreeQSocket);
+	// Pass the socket allocator and freer to the WebSocket driver so it uses the shared pool
+	WS_SetSocketAllocator(NET_NewQSocket);
+	WS_SetSocketFreer(NET_FreeQSocket);
 
 	// Initialize server systems
 	PR_Init();
@@ -269,7 +256,7 @@ async function Host_Init_Server() {
 	await net_drivers[1].Listen(true);
 
 	// Set up map change callbacks so rooms can trigger level changes
-	WT_SetMapCallbacks(
+	WS_SetMapCallbacks(
 		async (mapName) => {
 			Sys_Printf('Changing map to: ' + mapName + '\n');
 			await COM_EnsureFile('maps/' + mapName + '.bsp');
@@ -280,7 +267,7 @@ async function Host_Init_Server() {
 
 	// Set up maxclients callback so rooms can set player limits
 	// This must be called before SV_SpawnServer so clients receive the correct value in svc_serverinfo
-	WT_SetMaxClientsCallback((maxClients) => {
+	WS_SetMaxClientsCallback((maxClients) => {
 		// Clamp to valid range (like original MaxPlayers_f in net_main.c)
 		if (maxClients < 1) maxClients = 1;
 		if (maxClients > svs.maxclientslimit) maxClients = svs.maxclientslimit;
@@ -335,8 +322,7 @@ function Host_ServerFrame() {
 	frameCount++;
 	if (realtime - lastHeartbeat >= HEARTBEAT_INTERVAL) {
 		const playerCount = countActivePlayers();
-		const maxPW = WT_GetMaxPendingWrites();
-		Sys_Printf('[Heartbeat] time=' + Math.floor(realtime) + ' frames=' + frameCount + ' players=' + playerCount + ' sv.active=' + sv.active + ' maxPendingWrites=' + maxPW + '\n');
+		Sys_Printf('[Heartbeat] time=' + Math.floor(realtime) + ' frames=' + frameCount + ' players=' + playerCount + ' sv.active=' + sv.active + '\n');
 		lastHeartbeat = realtime;
 	}
 
