@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Three-Quake Wiki</title>
+	<link rel="icon" type="image/svg+xml" href="icon.svg">
+	<link rel="apple-touch-icon" href="icon.png">
+	<style>
+		:root {
+			--bg: #0b0908;
+			--panel: #171310;
+			--panel-border: #332920;
+			--text: #d8cfc4;
+			--text-dim: #8a7d6e;
+			--accent: #b23b2e;
+			--accent-bright: #e0523f;
+			--good: #7fae6c;
+			--code-bg: #0f0c0a;
+		}
+
+		* { box-sizing: border-box; }
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			background: var(--bg);
+			color: var(--text);
+			font-family: 'Trebuchet MS', 'Segoe UI', Verdana, sans-serif;
+			line-height: 1.55;
+		}
+
+		a { color: var(--accent-bright); }
+
+		header {
+			display: flex;
+			align-items: center;
+			gap: 16px;
+			padding: 24px 32px 18px;
+			border-bottom: 1px solid var(--panel-border);
+			position: sticky;
+			top: 0;
+			background: var(--bg);
+			z-index: 5;
+		}
+
+		header img { width: 36px; height: 36px; flex-shrink: 0; }
+		header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+		header .links { margin-left: auto; font-size: 12.5px; }
+		header .links a { color: var(--text-dim); text-decoration: none; margin-left: 16px; }
+		header .links a:hover { color: var(--text); }
+
+		.layout {
+			display: flex;
+			max-width: 1100px;
+			margin: 0 auto;
+			align-items: flex-start;
+		}
+
+		nav {
+			position: sticky;
+			top: 90px;
+			width: 190px;
+			flex-shrink: 0;
+			padding: 28px 12px 40px 32px;
+			font-size: 13px;
+		}
+		nav a {
+			display: block;
+			color: var(--text-dim);
+			text-decoration: none;
+			padding: 4px 0;
+		}
+		nav a:hover { color: var(--text); }
+
+		main { flex: 1; min-width: 0; padding: 28px 32px 80px 24px; }
+
+		section { margin-bottom: 48px; scroll-margin-top: 90px; }
+
+		h2 {
+			font-size: 15px;
+			text-transform: uppercase;
+			letter-spacing: 1.5px;
+			color: var(--accent-bright);
+			margin: 0 0 6px;
+			padding-bottom: 10px;
+			border-bottom: 1px solid var(--panel-border);
+		}
+
+		h3 { font-size: 14px; margin: 22px 0 8px; color: var(--text); }
+
+		p { margin: 10px 0; font-size: 14px; }
+
+		ol, ul { font-size: 14px; padding-left: 22px; }
+		li { margin: 4px 0; }
+
+		code {
+			background: var(--code-bg);
+			border: 1px solid var(--panel-border);
+			border-radius: 3px;
+			padding: 1px 5px;
+			font-family: 'Consolas', 'Courier New', monospace;
+			font-size: 12.5px;
+			color: var(--good);
+		}
+
+		table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+		th { text-align: left; color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 10px; border-bottom: 1px solid var(--panel-border); }
+		td { padding: 7px 10px; border-top: 1px solid var(--panel-border); vertical-align: top; }
+		tr:hover td { background: #1a1512; }
+
+		.card {
+			background: var(--panel);
+			border: 1px solid var(--panel-border);
+			border-radius: 8px;
+			padding: 16px 18px;
+			margin: 14px 0;
+		}
+		.card h3 { margin-top: 0; }
+
+		.classnames {
+			font-family: 'Consolas', 'Courier New', monospace;
+			font-size: 12px;
+			color: var(--good);
+			background: var(--code-bg);
+			border: 1px solid var(--panel-border);
+			border-radius: 6px;
+			padding: 10px 12px;
+			line-height: 1.7;
+			word-break: break-word;
+		}
+
+		.badge {
+			display: inline-block;
+			font-size: 10px;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			padding: 2px 6px;
+			border-radius: 3px;
+			background: #2a2018;
+			color: var(--text-dim);
+			margin-left: 8px;
+		}
+
+		.tip {
+			background: #16201a;
+			border: 1px solid #2a3f2a;
+			border-radius: 6px;
+			padding: 10px 14px;
+			font-size: 13px;
+			margin: 12px 0;
+		}
+		.tip strong { color: var(--good); }
+
+		.warn {
+			background: #241512;
+			border: 1px solid #4a2620;
+			border-radius: 6px;
+			padding: 10px 14px;
+			font-size: 13px;
+			margin: 12px 0;
+		}
+		.warn strong { color: var(--accent-bright); }
+
+		kbd {
+			background: #2a2018;
+			border: 1px solid #4a3a28;
+			border-bottom-width: 2px;
+			border-radius: 4px;
+			padding: 1px 7px;
+			font-family: 'Consolas', 'Courier New', monospace;
+			font-size: 12px;
+		}
+
+		@media (max-width: 800px) {
+			nav { display: none; }
+			main { padding: 20px 20px 60px; }
+		}
+	</style>
+</head>
+<body>
+
+	<header>
+		<img src="icon.svg" alt="">
+		<h1>Wiki</h1>
+		<div class="links">
+			<a href="maps.html">maps</a>
+			<a href="index.html">game</a>
+			<a href="admin.html">admin</a>
+		</div>
+	</header>
+
+	<div class="layout">
+		<nav>
+			<a href="#start">Quick start</a>
+			<a href="#controls">Controls</a>
+			<a href="#console">Console &amp; cheats</a>
+			<a href="#enemies">Enemies &amp; items</a>
+			<a href="#mods">Mods</a>
+			<a href="#admin">Admin guide</a>
+			<a href="#faq">FAQ</a>
+		</nav>
+
+		<main>
+
+			<section id="start">
+				<h2>Quick Start</h2>
+				<p>Everything runs in the browser — nothing to install.</p>
+				<ol>
+					<li>Get a username and password from the admin (whoever's running the server).</li>
+					<li>Open the game's link and log in.</li>
+					<li>You'll land in <strong>the Hub</strong> — a shared space everyone spawns into after logging in.</li>
+					<li>Walk up to the <strong>Travel</strong> button (bottom-right corner) to jump to any world. Pick the same
+						one your friends picked and you'll land in the same game together — no codes to share.</li>
+					<li>To come back to the Hub later, just reload the page (or reconnect with no map picked).</li>
+				</ol>
+				<div class="tip"><strong>Your progress is saved automatically.</strong> Health, armor, ammo and weapons
+					are tied to your account and restored the next time you spawn — even in a different room, even after
+					closing the tab.</div>
+			</section>
+
+			<section id="controls">
+				<h2>Controls</h2>
+				<table>
+					<tr><th>Action</th><th>Key</th></tr>
+					<tr><td>Move</td><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></td></tr>
+					<tr><td>Look</td><td>Mouse</td></tr>
+					<tr><td>Fire</td><td>Left click / <kbd>Ctrl</kbd></td></tr>
+					<tr><td>Jump</td><td><kbd>Space</kbd></td></tr>
+					<tr><td>Next / previous weapon</td><td>Mouse wheel, or <kbd>[</kbd> <kbd>]</kbd></td></tr>
+					<tr><td>Open console</td><td><kbd>~</kbd> (tilde/backtick)</td></tr>
+					<tr><td>Chat (everyone)</td><td><kbd>T</kbd></td></tr>
+					<tr><td>Scoreboard</td><td><kbd>Tab</kbd></td></tr>
+					<tr><td>Main menu</td><td><kbd>Esc</kbd></td></tr>
+				</table>
+				<p>On phones/tablets, on-screen <strong>FIRE</strong> and <strong>JUMP</strong> buttons appear automatically —
+					drag anywhere else on screen to look around and walk.</p>
+			</section>
+
+			<section id="console">
+				<h2>Console &amp; Cheats</h2>
+				<p>Press <kbd>~</kbd> to open the console and type any of these. They work in any room, against any mod
+					that's loaded — including custom monsters/items from Copper or Fantasy Quake.</p>
+
+				<table>
+					<tr><th>Command</th><th>What it does</th></tr>
+					<tr><td><code>god</code></td><td>Toggle invincibility.</td></tr>
+					<tr><td><code>noclip</code></td><td>Toggle walking through walls.</td></tr>
+					<tr><td><code>notarget</code></td><td>Toggle monsters ignoring you.</td></tr>
+					<tr><td><code>give h100</code></td><td>Set health to 100 (any number).</td></tr>
+					<tr><td><code>give c100</code></td><td>Set cells to 100. Also <code>s</code>hells, <code>n</code>ails, <code>r</code>ockets.</td></tr>
+					<tr><td><code>give 2</code> … <code>give 8</code></td><td>Give a specific weapon (2 = shotgun, 3 = super shotgun, etc).</td></tr>
+					<tr><td><code>summon &lt;classname&gt;</code></td><td>Spawn any monster, item or weapon a few steps in front of you. See <a href="#enemies">Enemies &amp; Items</a> for classnames.</td></tr>
+					<tr><td><code>classlist &lt;text&gt;</code></td><td>List every spawnable classname containing that text in the <em>currently loaded</em> mod — e.g. <code>classlist monster_</code>.</td></tr>
+					<tr><td><code>name "Yourname"</code></td><td>Change your display name (normally set automatically from your login).</td></tr>
+					<tr><td><code>disconnect</code></td><td>Leave the current room without closing the tab.</td></tr>
+					<tr><td><code>impulse 50</code></td><td>Fantasy Quake only — cycle player class. See <a href="#mods">Mods</a>.</td></tr>
+				</table>
+
+				<div class="tip"><strong>Example:</strong> <code>summon monster_ogre</code> drops an ogre right in front
+					of you. <code>summon item_health</code> drops a healthbox. Works with anything from
+					<code>classlist</code>'s output.</div>
+			</section>
+
+			<section id="enemies">
+				<h2>Enemies &amp; Items</h2>
+				<p>What's spawnable depends on which mod a room is running — these lists were pulled directly from each
+					mod's own game logic, so they're exact. Use <code>summon &lt;name&gt;</code> to spawn any of them.</p>
+
+				<div class="card">
+					<h3>Vanilla Quake</h3>
+					<p><strong>Monsters</strong></p>
+					<div class="classnames">monster_army, monster_boss, monster_demon1, monster_dog, monster_enforcer,
+						monster_fish, monster_hell_knight, monster_knight, monster_ogre, monster_ogre_marksman,
+						monster_oldone, monster_shalrath, monster_shambler, monster_tarbaby, monster_wizard, monster_zombie</div>
+					<p><strong>Items</strong></p>
+					<div class="classnames">item_health, item_armor1, item_armor2, item_armorInv, item_shells, item_spikes,
+						item_rockets, item_cells, item_key1, item_key2, item_sigil, item_artifact_invulnerability,
+						item_artifact_envirosuit, item_artifact_invisibility, item_artifact_super_damage</div>
+					<p><strong>Weapons</strong></p>
+					<div class="classnames">weapon_supershotgun, weapon_nailgun, weapon_supernailgun,
+						weapon_grenadelauncher, weapon_rocketlauncher, weapon_lightning</div>
+				</div>
+
+				<div class="card">
+					<h3>Copper <span class="badge">hub + frogsbog</span></h3>
+					<p>Vanilla-compatible plus its own extras — coop-friendly monster spawners, a backpack item, and more.</p>
+					<p><strong>Monsters</strong> (spawn the plain <code>monster_x</code> ones directly; the
+						<code>_spawn</code>/<code>_spawner</code> variants are Copper's coop spawn-point system, not
+						meant to be summoned directly)</p>
+					<div class="classnames">monster_army, monster_boss, monster_demon1, monster_dog, monster_enforcer,
+						monster_fish, monster_hell_knight, monster_knight, monster_ogre, monster_ogre_marksman,
+						monster_oldone, monster_shalrath, monster_shambler, monster_tarbaby, monster_wizard, monster_zombie</div>
+					<p><strong>Items</strong></p>
+					<div class="classnames">item_health, item_armor1, item_armor2, item_armorInv, item_backpack, item_shells,
+						item_spikes, item_rockets, item_cells, item_key1, item_key2, item_sigil,
+						item_artifact_invulnerability, item_artifact_envirosuit, item_artifact_invisibility,
+						item_artifact_super_damage</div>
+					<p><strong>Weapons</strong></p>
+					<div class="classnames">weapon_shotgun, weapon_supershotgun, weapon_nailgun, weapon_supernailgun,
+						weapon_grenadelauncher, weapon_rocketlauncher, weapon_lightning</div>
+				</div>
+
+				<div class="card">
+					<h3>Fantasy Quake <span class="badge">fqrotpst</span></h3>
+					<p>A standalone RPG conversion with its own bestiary and gear entirely.</p>
+					<p><strong>Monsters</strong></p>
+					<div class="classnames">monster_archer, monster_army, monster_boss, monster_darkhorror, monster_demon1,
+						monster_dog, monster_elementalist, monster_enforcer, monster_fhod, monster_fish, monster_goarc1,
+						monster_goarc2, monster_goarc3, monster_gob1, monster_hell_knight, monster_knight,
+						monster_minotaur, monster_ogre, monster_ogre_marksman, monster_oldone, monster_rager,
+						monster_reaper, monster_shalrath, monster_shambler, monster_shopkeep, monster_skeleton,
+						monster_statue, monster_tarbaby, monster_vore, monster_wizard, monster_xbowman, monster_zombie</div>
+					<p><strong>Items</strong></p>
+					<div class="classnames">item_health, item_armor1, item_armor2, item_armorInv, item_armor_leather,
+						item_armor_plate, item_armor_shield, item_gold, item_grapple, item_lantern, item_phoenix,
+						item_ringprot, item_shells, item_spikes, item_rockets, item_cells, item_key1, item_key2,
+						item_sigil, item_star, item_artifact_invulnerability, item_artifact_envirosuit,
+						item_artifact_invisibility, item_artifact_super_damage</div>
+					<p><strong>Weapons</strong></p>
+					<div class="classnames">weapon_bow, weapon_crossbow, weapon_longbow, weapon_musket,
+						weapon_nailgun, weapon_supernailgun, weapon_grenadelauncher, weapon_rocketlauncher,
+						weapon_lightning, weapon_supershotgun</div>
+				</div>
+
+				<div class="tip"><strong>Not sure what's loaded right now?</strong> Type <code>classlist monster_</code>
+					(or <code>item_</code>, <code>weapon_</code>) in the console to get the live list for whatever room
+					you're actually standing in.</div>
+			</section>
+
+			<section id="mods">
+				<h2>Mods</h2>
+
+				<div class="card">
+					<h3>Copper</h3>
+					<p>The mod the Hub itself runs on — a modernized vanilla-compatible base with better monster AI,
+						extra effects, and its own short campaign. <a href="https://www.quaddicted.com/reviews/copper.html">Learn more</a>.</p>
+					<p><strong>Frogsbog</strong> ("Bog Man Has Had Enough") is a Copper map by Chris "1600frogs" Brady —
+						reachable from the Hub's Travel menu.</p>
+				</div>
+
+				<div class="card">
+					<h3>Fantasy Quake: Rise of the Phoenix</h3>
+					<p>A standalone RPG total-conversion — six playable classes, a spell/rune system, a grappling hook,
+						and a shop. Reachable from the Hub's Travel menu.</p>
+
+					<h3 style="margin-top:18px;">Classes</h3>
+					<p>Press <kbd>Home</kbd> (or console: <code>impulse 50</code>) to cycle your class. Each class has its
+						own abilities, bound automatically once you pick it:</p>
+					<table>
+						<tr><th>Class</th><th>Abilities</th></tr>
+						<tr><td>Crusader</td><td>Blade spin, repair (armor)</td></tr>
+						<tr><td>Rogue</td><td>Climb, steal, leap</td></tr>
+						<tr><td>Outlander</td><td>Frenzy, wolf form, runes (travel/sound/fire/earth/guide/bulk), weapon/armor/ground summons</td></tr>
+						<tr><td>Necromancer</td><td>Lava storm, feign death, firewall, death ball</td></tr>
+						<tr><td>Druid</td><td>(shapeshifting — see in-game spell list)</td></tr>
+						<tr><td>Diviner</td><td>Light storm, bond</td></tr>
+					</table>
+
+					<h3>Universal abilities &amp; items</h3>
+					<table>
+						<tr><th>Key</th><th>Does</th></tr>
+						<tr><td><kbd>Z</kbd></td><td>Grappling hook — hold <kbd>X</kbd>/<kbd>C</kbd> while attached to slide down / climb up the chain</td></tr>
+						<tr><td><kbd>\</kbd></td><td>Inventory</td></tr>
+						<tr><td><kbd>.</kbd> / <kbd>,</kbd></td><td>Next / previous inventory item</td></tr>
+						<tr><td><kbd>/</kbd></td><td>Use selected item</td></tr>
+						<tr><td><kbd>]</kbd> / <kbd>[</kbd></td><td>Spells on / spell list</td></tr>
+						<tr><td><kbd>B</kbd></td><td>Drop gold</td></tr>
+						<tr><td><kbd>N</kbd> / <kbd>M</kbd></td><td>Drop ammo / drop item</td></tr>
+					</table>
+
+					<div class="warn"><strong>Cheats built into the mod itself</strong> (bound to keys, or type as console
+						commands): <code>impulse 53</code> XP cheat (<kbd>'</kbd>), <code>impulse 254</code> debug mode
+						(<kbd>*</kbd>), <code>impulse 69</code> "gimme" — gives a pile of starting gear
+						(<kbd>;</kbd>). These are the mod's own, separate from the engine's <code>give</code>/<code>summon</code>.</div>
+				</div>
+			</section>
+
+			<section id="admin">
+				<h2>Admin Guide</h2>
+				<p>If you're running the server, the day-to-day stuff all lives in <a href="admin.html">admin.html</a> —
+					no command line needed after initial setup.</p>
+
+				<h3>Accounts</h3>
+				<p>Add, delete, reset passwords, and grant/revoke admin from the <strong>Users</strong> section. There's
+					no self-signup by design — you hand out credentials to whoever you invite.</p>
+
+				<h3>Maps</h3>
+				<p>The <strong>Maps</strong> section controls exactly what shows up in <a href="maps.html">maps.html</a>
+					and the in-game Travel menu:</p>
+				<ul>
+					<li><strong>Rename</strong> — edit the Title field. The ID (e.g. <code>frogsbog</code>) can't change
+						once created, since it has to match the actual map file.</li>
+					<li><strong>Hide/show</strong> — the Visible/Hidden toggle. Hidden maps stay in the catalog for you
+						to bring back later, they just don't show to players.</li>
+					<li><strong>Add a map</strong> — you'll need the map's ID (its filename minus <code>.bsp</code>), and
+						if it needs a mod, the mod dir(s) to layer in (e.g. <code>mods/copper</code>).</li>
+				</ul>
+
+				<h3>Rooms</h3>
+				<p>See who's connected where and terminate a room if needed (the Hub itself can't be terminated — it
+					just comes back empty on the next restart, so there's no point).</p>
+
+				<h3>Command-line fallback</h3>
+				<p>If the server's down and you need to bootstrap the first admin account:</p>
+				<pre style="background:var(--code-bg);border:1px solid var(--panel-border);border-radius:6px;padding:10px 14px;overflow-x:auto;font-size:12.5px;"><code>cd server
+deno run --allow-read --allow-write --unstable-kv manage_users.ts add yourname yourpassword --admin</code></pre>
+				<p>Full setup/deployment instructions are in <code>server/README.md</code> in the repo.</p>
+			</section>
+
+			<section id="faq">
+				<h2>FAQ</h2>
+
+				<h3>I can't log in / it says "Could not reach the server"</h3>
+				<p>The lobby server isn't running or isn't reachable. Ping the admin.</p>
+
+				<h3>The screen went black / I got kicked back to the main menu</h3>
+				<p>The room you were in probably ended (empty rooms get cleaned up after a while, except the Hub). Just
+					log back in — you'll land in the Hub with your progress intact.</p>
+
+				<h3>Can I lose my progress?</h3>
+				<p>Only if you leave while dead — dying and disconnecting doesn't save a 0-health state, so you'll
+					respawn fresh next time rather than stuck dead.</p>
+
+				<h3>Do I need Discord/voice chat set up in-game?</h3>
+				<p>No — this project leans on whatever voice chat your group already uses (Discord, etc). The game's own
+					text chat (<kbd>T</kbd>) works too if you'd rather type.</p>
+
+				<h3>Something's broken / a monster won't die / I'm stuck</h3>
+				<p><code>noclip</code> gets you unstuck, <code>god</code> gets you through a rough fight, and worst case
+					<code>disconnect</code> then reconnect resets your position (not your saved stats).</p>
+			</section>
+
+		</main>
+	</div>
+
+	<script src="server-config.js"></script>
+	<script type="module">
+
+		import { requireSession, getSession } from './src/auth_client.js';
+		requireSession();
+
+		const session = getSession();
+		if ( ! session || session.isAdmin !== true ) {
+
+			const adminLink = document.querySelector( 'header .links a[href="admin.html"]' );
+			if ( adminLink ) adminLink.remove();
+
+		}
+
+	</script>
+
+</body>
+</html>
