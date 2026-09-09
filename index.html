@@ -71,9 +71,21 @@
 <body>
 	<div id="loading">
 		<div id="loading-bar"><div id="loading-progress"></div></div>
-		<div id="loading-maps-link"><a href="maps.html">browse maps</a></div>
+		<div id="loading-maps-link"><a href="maps.html">browse maps</a><span id="loading-admin-link"></span></div>
 	</div>
 	<script src="server-config.js"></script>
+	<script>
+		try {
+
+			const session = JSON.parse( localStorage.getItem( 'tq_session' ) || 'null' );
+			if ( session && session.isAdmin ) {
+
+				document.getElementById( 'loading-admin-link' ).innerHTML = ' &middot; <a href="admin.html">admin</a>';
+
+			}
+
+		} catch ( e ) { /* no session yet */ }
+	</script>
 	<script type="importmap">
 	{
 		"imports": {

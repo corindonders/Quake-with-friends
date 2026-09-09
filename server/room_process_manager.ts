@@ -395,9 +395,12 @@ export function RoomManager_ListRooms(): Array<{
 	id: string;
 	name: string;
 	map: string;
+	mod: string;
 	port: number;
 	maxPlayers: number;
 	playerCount: number;
+	persistent: boolean;
+	createdAt: number;
 }> {
 	RoomManager_CleanupUnhealthyRooms();
 	const now = Date.now();
@@ -406,9 +409,12 @@ export function RoomManager_ListRooms(): Array<{
 		id: string;
 		name: string;
 		map: string;
+		mod: string;
 		port: number;
 		maxPlayers: number;
 		playerCount: number;
+		persistent: boolean;
+		createdAt: number;
 	}> = [];
 
 	for ( const room of roomProcesses.values() ) {
@@ -420,9 +426,12 @@ export function RoomManager_ListRooms(): Array<{
 			id: room.id,
 			name: room.hostName + "'s Game",
 			map: room.map,
+			mod: room.mod,
 			port: room.port,
 			maxPlayers: room.maxPlayers,
 			playerCount: room.playerCount,
+			persistent: room.persistent,
+			createdAt: room.createdAt,
 		} );
 	}
 

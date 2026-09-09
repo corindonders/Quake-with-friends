@@ -98,6 +98,31 @@ export async function deleteUser( username: string ): Promise<boolean> {
 
 }
 
+export async function setUserPassword( username: string, password: string ): Promise<boolean> {
+
+	const key = [ 'users', username.toLowerCase() ];
+	const existing = await kv.get<UserRecord>( key );
+	if ( existing.value == null ) return false;
+
+	const salt = crypto.getRandomValues( new Uint8Array( 16 ) );
+	const hash = await hashPassword( password, salt );
+
+	await kv.set( key, { ...existing.value, salt: toBase64( salt ), hash: toBase64( hash ) } );
+	return true;
+
+}
+
+export async function setUserAdmin( username: string, isAdmin: boolean ): Promise<boolean> {
+
+	const key = [ 'users', username.toLowerCase() ];
+	const existing = await kv.get<UserRecord>( key );
+	if ( existing.value == null ) return false;
+
+	await kv.set( key, { ...existing.value, isAdmin } );
+	return true;
+
+}
+
 export async function listUsers(): Promise<{ username: string; isAdmin: boolean; createdAt: number }[]> {
 
 	const out = [];

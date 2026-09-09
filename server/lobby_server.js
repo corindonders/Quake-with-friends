@@ -40,8 +40,12 @@ import {
 	RoomManager_CleanupIdleRooms,
 	RoomManager_CleanupUnhealthyRooms,
 	RoomManager_ShutdownAll,
+	RoomManager_TerminateRoom,
 } from './room_process_manager.ts';
-import { verifySession, verifyPassword, createSession } from './auth.ts';
+import {
+	verifySession, verifyPassword, createSession,
+	listUsers, createUser, deleteUser, setUserPassword, setUserAdmin,
+} from './auth.ts';
 
 // Server configuration
 const CONFIG = {
@@ -101,10 +105,16 @@ function _corsHeaders() {
 
 	return {
 		'Access-Control-Allow-Origin': CONFIG.allowOrigin,
-		'Access-Control-Allow-Methods': 'POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
+		'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 		'Content-Type': 'application/json',
 	};
+
+}
+
+function _json( body, status ) {
+
+	return new Response( JSON.stringify( body ), { status: status || 200, headers: _corsHeaders() } );
 
 }
 
@@ -136,7 +146,7 @@ async function handleLogin( req, address ) {
 		const token = await createSession( user.username, user.isAdmin );
 		Sys_Printf( 'Login: %s from %s\n', user.username, address );
 
-		return new Response( JSON.stringify( { token, username: user.username } ), {
+		return new Response( JSON.stringify( { token, username: user.username, isAdmin: user.isAdmin } ), {
 			status: 200, headers: _corsHeaders(),
 		} );
 
@@ -330,6 +340,154 @@ function handleWsConnection( socket, address ) {
 }
 
 // ---------------------------------------------------------------------------
+// Admin API
+// ---------------------------------------------------------------------------
+
+async function requireAdmin( req ) {
+
+	const auth = req.headers.get( 'authorization' ) || '';
+	const token = auth.startsWith( 'Bearer ' ) ? auth.slice( 7 ) : '';
+	const session = await verifySession( token );
+
+	if ( session === null ) return { error: _json( { error: 'Not logged in.' }, 401 ) };
+	if ( session.isAdmin !== true ) return { error: _json( { error: 'Admin access required.' }, 403 ) };
+
+	return { session };
+
+}
+
+const USERNAME_PATTERN = /^[a-z0-9_-]{1,15}$/i; // matches Host_Name_f's 15-char in-game name limit
+
+async function handleAdminRequest( req, url ) {
+
+	const auth = await requireAdmin( req );
+	if ( auth.error ) return auth.error;
+
+	const path = url.pathname;
+
+	// --- Users ---------------------------------------------------------
+
+	if ( req.method === 'GET' && path === '/admin/api/users' ) {
+
+		return _json( { users: await listUsers() } );
+
+	}
+
+	if ( req.method === 'POST' && path === '/admin/api/users' ) {
+
+		let body;
+		try { body = await req.json(); } catch ( e ) { return _json( { error: 'Bad request.' }, 400 ); }
+
+		const username = String( body.username || '' ).trim();
+		const password = String( body.password || '' );
+		const isAdmin = body.isAdmin === true;
+
+		if ( ! USERNAME_PATTERN.test( username ) ) {
+
+			return _json( { error: 'Username must be 1-15 characters (letters, numbers, - or _) -- Quake\'s in-game name limit.' }, 400 );
+
+		}
+		if ( password.length < 8 ) return _json( { error: 'Password must be at least 8 characters.' }, 400 );
+
+		const existing = await listUsers();
+		if ( existing.some( ( u ) => u.username === username.toLowerCase() ) ) {
+
+			return _json( { error: 'That username already exists.' }, 409 );
+
+		}
+
+		await createUser( username, password, isAdmin );
+		Sys_Printf( 'Admin %s created user %s\n', auth.session.username, username );
+		return _json( { ok: true } );
+
+	}
+
+	const userMatch = path.match( /^\/admin\/api\/users\/([^/]+)$/ );
+	if ( userMatch ) {
+
+		const targetUsername = decodeURIComponent( userMatch[ 1 ] );
+
+		if ( req.method === 'DELETE' ) {
+
+			if ( targetUsername.toLowerCase() === auth.session.username.toLowerCase() ) {
+
+				return _json( { error: 'You can\'t delete your own account.' }, 400 );
+
+			}
+
+			const removed = await deleteUser( targetUsername );
+			if ( ! removed ) return _json( { error: 'No such user.' }, 404 );
+
+			Sys_Printf( 'Admin %s deleted user %s\n', auth.session.username, targetUsername );
+			return _json( { ok: true } );
+
+		}
+
+		if ( req.method === 'PATCH' ) {
+
+			let body;
+			try { body = await req.json(); } catch ( e ) { return _json( { error: 'Bad request.' }, 400 ); }
+
+			if ( typeof body.password === 'string' && body.password.length > 0 ) {
+
+				if ( body.password.length < 8 ) return _json( { error: 'Password must be at least 8 characters.' }, 400 );
+				const ok = await setUserPassword( targetUsername, body.password );
+				if ( ! ok ) return _json( { error: 'No such user.' }, 404 );
+
+			}
+
+			if ( typeof body.isAdmin === 'boolean' ) {
+
+				if ( targetUsername.toLowerCase() === auth.session.username.toLowerCase() && body.isAdmin === false ) {
+
+					return _json( { error: 'You can\'t remove your own admin access.' }, 400 );
+
+				}
+
+				const ok = await setUserAdmin( targetUsername, body.isAdmin );
+				if ( ! ok ) return _json( { error: 'No such user.' }, 404 );
+
+			}
+
+			Sys_Printf( 'Admin %s updated user %s\n', auth.session.username, targetUsername );
+			return _json( { ok: true } );
+
+		}
+
+	}
+
+	// --- Rooms -----------------------------------------------------------
+
+	if ( req.method === 'GET' && path === '/admin/api/rooms' ) {
+
+		return _json( { rooms: RoomManager_ListRooms() } );
+
+	}
+
+	const roomMatch = path.match( /^\/admin\/api\/rooms\/([^/]+)$/ );
+	if ( roomMatch && req.method === 'DELETE' ) {
+
+		const roomId = decodeURIComponent( roomMatch[ 1 ] ).toUpperCase();
+
+		if ( roomId === HUB_ROOM_ID ) {
+
+			return _json( { error: 'Can\'t terminate the hub -- it\'ll only come back empty on the next lobby restart.' }, 400 );
+
+		}
+
+		const removed = RoomManager_TerminateRoom( roomId );
+		if ( ! removed ) return _json( { error: 'No such room.' }, 404 );
+
+		Sys_Printf( 'Admin %s terminated room %s\n', auth.session.username, roomId );
+		return _json( { ok: true } );
+
+	}
+
+	return _json( { error: 'Not found.' }, 404 );
+
+}
+
+// ---------------------------------------------------------------------------
 // HTTP entry point
 // ---------------------------------------------------------------------------
 
@@ -349,6 +507,12 @@ function buildHandler() {
 		if ( req.method === 'POST' && url.pathname === '/login' ) {
 
 			return await handleLogin( req, info.remoteAddr.hostname );
+
+		}
+
+		if ( url.pathname.startsWith( '/admin/api/' ) ) {
+
+			return await handleAdminRequest( req, url );
 
 		}
 
