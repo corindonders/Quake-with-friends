@@ -24,6 +24,16 @@ const _quietLogAllowPatterns: RegExp[] = [
 	/^WebTransport server listening /,
 	/^WebTransport server driver initialized/,
 	/^NET_Init complete/,
+	/^Lobby server listening/,
+	/^Login HTTPS endpoint listening/,
+	/^Hub room ready/,
+	/^WARNING: failed to create hub room/,
+	/^Room \S+ created on port/,
+	/^Room \S+ (unavailable|is full)/,
+	/^Rejected unauthenticated lobby request/,
+	/^Login: /,
+	/^Loading mod: /,
+	/^Mod: /,
 ];
 
 function _shouldPrintLine(line: string): boolean {

@@ -192,6 +192,11 @@
 </head>
 <body>
 
+	<script type="module">
+		import { requireSession } from './src/auth_client.js';
+		requireSession();
+	</script>
+
 	<header>
 		<img src="icon.svg" alt="">
 		<div>

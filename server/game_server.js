@@ -5,7 +5,7 @@
 // Production: deno run --allow-net --allow-read --unstable-net --config /opt/three-quake/deno.json /opt/three-quake/server/game_server.js
 
 import { Sys_Printf, Sys_FloatTime } from '../src/sys.js';
-import { COM_FetchPak, COM_AddPack, COM_SetLooseFileBasePath, COM_EnsureFile } from '../src/pak.js';
+import { COM_FetchPak, COM_AddPack, COM_SetLooseFileBasePath, COM_EnsureFile, COM_LoadMod } from '../src/pak.js';
 import { Cbuf_Init, Cbuf_Execute, Cmd_Init } from '../src/cmd.js';
 import { Host_InitCommands } from '../src/host_cmd.js';
 import { deathmatch, samelevel, noexit, sys_ticrate } from '../src/host.js';
@@ -61,6 +61,7 @@ const CONFIG = {
 	keyFile: '/etc/letsencrypt/live/wts.mrdoob.com/privkey.pem',
 	maxClients: 4,
 	defaultMap: 'start',
+	mod: '',              // Comma-separated mod dirs, e.g. "mods/copper,mods/frogsbog_v1/copper"
 	roomId: null,        // Room ID if spawned by lobby server
 	directMode: false,   // Skip lobby protocol, accept connections directly
 	idleTimeout: 300,    // Seconds to wait before exiting when empty (room mode)
@@ -79,6 +80,8 @@ function parseArgs() {
 			CONFIG.defaultMap = args[++i];
 		} else if (arg === '-pak' && args[i + 1]) {
 			CONFIG.pakPath = args[++i];
+		} else if (arg === '-mod' && args[i + 1]) {
+			CONFIG.mod = args[++i];
 		} else if (arg === '-cert' && args[i + 1]) {
 			CONFIG.certFile = args[++i];
 		} else if (arg === '-key' && args[i + 1]) {
@@ -233,8 +236,34 @@ async function Host_Init_Server() {
 	}
 	COM_AddPack(pak);
 
+	// Load pak1.pak, pak2.pak, ... alongside pak0.pak if present next to it
+	// (registered/full game content -- some mods, e.g. Copper's hub map,
+	// reference monster models that only ship in the registered game).
+	// Sequential per Quake convention: stop at the first one that's missing.
+	const pakDir = CONFIG.pakPath.replace(/pak0\.pak$/, '');
+	for (let i = 1; i < 10; i++) {
+		const extraPakPath = pakDir + 'pak' + i + '.pak';
+		const extraPak = await COM_FetchPak(extraPakPath, 'pak' + i + '.pak');
+		if (!extraPak) break;
+		COM_AddPack(extraPak);
+		Sys_Printf('Loaded %s\n', extraPakPath);
+	}
+
 	// Set base path for on-demand loose file loading (custom maps not in PAK)
 	COM_SetLooseFileBasePath('/opt/three-quake/');
+
+	// Layer any mod dirs onto the search path (paks, progs.dat override, loose
+	// files) -- same mechanism and wire format (comma-separated mods/<name>
+	// paths) as the browser client's ?mod= param. Room processes run with
+	// server/ as their cwd, one level below the repo root the client-facing
+	// paths are relative to.
+	if (CONFIG.mod) {
+		const modDirs = CONFIG.mod.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+		for (const modDir of modDirs) {
+			Sys_Printf('Loading mod: %s...\n', modDir);
+			await COM_LoadMod('../' + modDir);
+		}
+	}
 
 	// Start listening for connections
 	await net_drivers[1].Listen(true);

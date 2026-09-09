@@ -14,6 +14,7 @@ const ROOM_JOIN_STALE_MS = 12 * 1000;
 interface RoomProcess {
 	id: string;
 	map: string;
+	mod: string;
 	port: number;
 	maxPlayers: number;
 	hostName: string;
@@ -23,6 +24,7 @@ interface RoomProcess {
 	lastActiveTime: number;  // Last time room had players (for idle cleanup)
 	lastOutputTime: number;  // Last stdout/stderr line seen from room process
 	lastWatchdogTime: number; // Last watchdog tick seen from room stderr
+	persistent: boolean; // exempt from idle cleanup (e.g. the hub)
 }
 
 function isRoomResponsive( room: RoomProcess, now: number ): boolean {
@@ -44,7 +46,10 @@ const usedPorts = new Set<number>();
 let certFile = '/etc/letsencrypt/live/wts.mrdoob.com/fullchain.pem';
 let keyFile = '/etc/letsencrypt/live/wts.mrdoob.com/privkey.pem';
 let pakPath = '/opt/three-quake/pak0.pak';
-let denoPath = '/root/.deno/bin/deno';
+// Default to whatever `deno` binary is currently running the lobby, rather
+// than a hardcoded prod path -- portable across machines/OSes; still
+// overridable via RoomManager_SetConfig({ denoPath }) if needed.
+let denoPath = Deno.execPath();
 
 /**
  * Configure paths for room servers
@@ -92,9 +97,11 @@ function findAvailablePort(): number | null {
  */
 export async function RoomManager_CreateRoom( config: {
 	map: string;
+	mod?: string;
 	maxPlayers: number;
 	hostName: string;
 	specificId?: string;
+	persistent?: boolean;
 } ): Promise<{ id: string; port: number } | null> {
 	// Reclaim any frozen rooms before enforcing limits/port availability.
 	RoomManager_CleanupUnhealthyRooms();
@@ -118,11 +125,16 @@ export async function RoomManager_CreateRoom( config: {
 	// Generate unique room ID (or use specificId if provided)
 	let id: string;
 	if ( config.specificId != null && config.specificId.length > 0 ) {
-		// Check if specific ID is already in use
-		if ( roomProcesses.has( config.specificId.toUpperCase() ) ) {
-			Sys_Printf( 'Room ID %s already exists\n', config.specificId );
+
+		// Create-or-get: if this ID is already running, just hand back its
+		// info instead of erroring. This is what lets several players who
+		// each derive the same room ID for a destination (e.g. everyone
+		// picking "Frogsbog" from the hub) land in the same room, whichever
+		// of them gets there first.
+		const existing = roomProcesses.get( config.specificId.toUpperCase() );
+		if ( existing != null ) {
 			usedPorts.delete( port );
-			return null;
+			return { id: existing.id, port: existing.port };
 		}
 		id = config.specificId.toUpperCase();
 	} else {
@@ -135,10 +147,13 @@ export async function RoomManager_CreateRoom( config: {
 	Sys_Printf( 'Creating room %s on port %d (map: %s)\n', id, port, config.map );
 
 	try {
-		// Find the path to the game server script
-		const serverDir = new URL( '.', import.meta.url ).pathname;
+		// Find the path to the game server script. decodeURIComponent + the
+		// drive-letter fixup matter on Windows (file:///C:/... -> pathname is
+		// /C:/... with %20 etc still encoded); a no-op on POSIX.
+		const serverDir = decodeURIComponent( new URL( '.', import.meta.url ).pathname )
+			.replace( /^\/([A-Za-z]:)/, '$1' );
 		const gameServerPath = serverDir + 'game_server.js';
-		const denoJsonPath = serverDir.replace( /server\/$/, 'deno.json' );
+		const denoJsonPath = serverDir.replace( /server[/\\]$/, 'deno.json' );
 
 		// Validate map name - only allow alphanumeric and underscore
 		const safeMap = config.map.replace( /[^a-zA-Z0-9_]/g, '' );
@@ -148,23 +163,36 @@ export async function RoomManager_CreateRoom( config: {
 			return null;
 		}
 
+		// Validate mod dir list - comma-separated relative paths under mods/,
+		// same shape the browser client's ?mod= param accepts.
+		const safeMod = ( config.mod || '' ).replace( /[^a-zA-Z0-9_/,-]/g, '' );
+		if ( safeMod !== ( config.mod || '' ) ) {
+			Sys_Printf( 'Invalid mod path: %s\n', config.mod );
+			usedPorts.delete( port );
+			return null;
+		}
+
 		// Spawn dedicated server process for this room
+		const args = [
+			'run',
+			'--allow-net',
+			'--allow-read',
+			'--unstable-net',
+			'--config', denoJsonPath,
+			gameServerPath,
+			'-port', String( port ),
+			'-maxclients', String( config.maxPlayers ),
+			'-map', safeMap,
+			'-pak', pakPath,
+			'-cert', certFile,
+			'-key', keyFile,
+			'-room', id,  // Pass room ID so process can identify itself
+		];
+		if ( safeMod.length > 0 ) args.push( '-mod', safeMod );
+
 		const command = new Deno.Command( denoPath, {
-			args: [
-				'run',
-				'--allow-net',
-				'--allow-read',
-				'--unstable-net',
-				'--config', denoJsonPath,
-				gameServerPath,
-				'-port', String( port ),
-				'-maxclients', String( config.maxPlayers ),
-				'-map', safeMap,
-				'-pak', pakPath,
-				'-cert', certFile,
-				'-key', keyFile,
-				'-room', id,  // Pass room ID so process can identify itself
-			],
+			args,
+			cwd: serverDir, // pin cwd regardless of how the lobby process itself was launched
 			stdout: 'piped',
 			stderr: 'piped',
 		} );
@@ -176,6 +204,7 @@ export async function RoomManager_CreateRoom( config: {
 		const roomInfo: RoomProcess = {
 			id,
 			map: safeMap,
+			mod: safeMod,
 			port,
 			maxPlayers: config.maxPlayers,
 			hostName: config.hostName,
@@ -185,6 +214,7 @@ export async function RoomManager_CreateRoom( config: {
 			lastActiveTime: now,  // Initialize to creation time
 			lastOutputTime: now,
 			lastWatchdogTime: now,
+			persistent: config.persistent === true,
 		};
 		roomProcesses.set( id, roomInfo );
 
@@ -335,6 +365,7 @@ export async function RoomManager_CreateRoom( config: {
 export function RoomManager_GetRoom( id: string ): {
 	id: string;
 	map: string;
+	mod: string;
 	port: number;
 	maxPlayers: number;
 	hostName: string;
@@ -350,6 +381,7 @@ export function RoomManager_GetRoom( id: string ): {
 	return {
 		id: room.id,
 		map: room.map,
+		mod: room.mod,
 		port: room.port,
 		maxPlayers: room.maxPlayers,
 		hostName: room.hostName,
@@ -473,6 +505,8 @@ export function RoomManager_CleanupIdleRooms( maxIdleMs: number = 5 * 60 * 1000 
 	let cleaned = 0;
 
 	for ( const [ id, room ] of roomProcesses ) {
+		if ( room.persistent ) continue; // e.g. the hub -- always kept alive
+
 		// Check if room has been idle (0 players) for too long
 		// Uses lastActiveTime which tracks when room last had players
 		const idleTime = now - room.lastActiveTime;

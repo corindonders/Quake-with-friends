@@ -7,7 +7,10 @@
 import { Sys_Printf } from './sys_server.ts';
 
 // Reduce log write volume in production. Keep only allowlisted lines.
-globalThis.__THREE_QUAKE_QUIET_LOGS = true;
+// Pass -verbose (or set THREE_QUAKE_VERBOSE=1) to see everything, e.g. while
+// developing locally.
+globalThis.__THREE_QUAKE_QUIET_LOGS =
+	! Deno.args.includes( '-verbose' ) && Deno.env.get( 'THREE_QUAKE_VERBOSE' ) !== '1';
 
 // Global unhandled rejection handler - prevent server crashes from async errors
 globalThis.addEventListener( 'unhandledrejection', ( event ) => {
@@ -23,13 +26,18 @@ import {
 	RoomManager_CleanupUnhealthyRooms,
 	RoomManager_ShutdownAll,
 } from './room_process_manager.ts';
+import { verifySession, verifyPassword, createSession } from './auth.ts';
 
 // Server configuration
 const CONFIG = {
 	port: 4433,
+	httpPort: 4443,
 	certFile: '/etc/letsencrypt/live/wts.mrdoob.com/fullchain.pem',
 	keyFile: '/etc/letsencrypt/live/wts.mrdoob.com/privkey.pem',
 	pakPath: '/opt/three-quake/pak0.pak',
+	// Comma-separated list of origins allowed to call /login (browser CORS).
+	// Set via -allow-origin, e.g. https://yourname.github.io
+	allowOrigin: '*',
 };
 
 // Parse command line arguments
@@ -39,12 +47,16 @@ function parseArgs() {
 		const arg = args[ i ];
 		if ( arg === '-port' && args[ i + 1 ] ) {
 			CONFIG.port = parseInt( args[ ++i ], 10 );
+		} else if ( arg === '-httpport' && args[ i + 1 ] ) {
+			CONFIG.httpPort = parseInt( args[ ++i ], 10 );
 		} else if ( arg === '-cert' && args[ i + 1 ] ) {
 			CONFIG.certFile = args[ ++i ];
 		} else if ( arg === '-key' && args[ i + 1 ] ) {
 			CONFIG.keyFile = args[ ++i ];
 		} else if ( arg === '-pak' && args[ i + 1 ] ) {
 			CONFIG.pakPath = args[ ++i ];
+		} else if ( arg === '-allow-origin' && args[ i + 1 ] ) {
+			CONFIG.allowOrigin = args[ ++i ];
 		}
 	}
 }
@@ -56,6 +68,7 @@ const LOBBY_CREATE = 0x03;
 const LOBBY_ROOMS = 0x81;
 const LOBBY_ERROR = 0x82;
 const ROOM_ID_PATTERN = /^[A-Z0-9]{6}$/;
+const HUB_ROOM_ID = 'HUBWLD';
 
 // QUIC endpoint
 let quicEndpoint = null;
@@ -209,8 +222,31 @@ async function handleSession( wt, address ) {
 
 		Sys_Printf( 'Received message type %d from %s\n', msg.type, address );
 
+		// Every lobby request must carry a valid session token -- this is the
+		// only gate a client has to pass to learn a room's port/ID, since the
+		// room processes themselves don't (yet) verify who's connecting.
+		async function authenticate( rawToken ) {
+
+			const session = await verifySession( rawToken );
+			if ( session === null ) {
+
+				const errorData = new TextEncoder().encode( 'Not logged in. Please log in again.' );
+				await sendFramedMessage( writer, LOBBY_ERROR, errorData );
+				Sys_Printf( 'Rejected unauthenticated lobby request from %s\n', address );
+
+			}
+			return session;
+
+		}
+
 		switch ( msg.type ) {
 			case LOBBY_LIST: {
+
+				let token = '';
+				try { token = JSON.parse( new TextDecoder().decode( msg.data ) ).token || ''; } catch { /* empty */ }
+				const session = await authenticate( token );
+				if ( session === null ) break;
+
 				// Send room list
 				const rooms = RoomManager_ListRooms();
 				const json = JSON.stringify( rooms );
@@ -225,10 +261,15 @@ async function handleSession( wt, address ) {
 				const configJson = new TextDecoder().decode( msg.data );
 				try {
 					const config = JSON.parse( configJson );
+
+					const session = await authenticate( config.token || '' );
+					if ( session === null ) break;
+
 					const result = await RoomManager_CreateRoom( {
 						map: config.map || 'rapture1',
+						mod: config.mod || '',
 						maxPlayers: config.maxPlayers || 4,
-						hostName: config.hostName || 'Player',
+						hostName: session.username,
 					} );
 
 					if ( result === null ) {
@@ -243,8 +284,9 @@ async function handleSession( wt, address ) {
 							id: result.id,
 							port: result.port,
 							map: room !== null ? room.map : ( config.map || 'rapture1' ),
+							mod: room !== null ? room.mod : ( config.mod || '' ),
 							maxPlayers: room !== null ? room.maxPlayers : ( config.maxPlayers || 4 ),
-							hostName: room !== null ? room.hostName : ( config.hostName || 'Player' ),
+							hostName: room !== null ? room.hostName : session.username,
 						};
 						const json = JSON.stringify( roomInfo );
 						const data = new TextEncoder().encode( json );
@@ -260,8 +302,15 @@ async function handleSession( wt, address ) {
 			}
 
 			case LOBBY_JOIN: {
+
+				let joinPayload = {};
+				try { joinPayload = JSON.parse( new TextDecoder().decode( msg.data ) ); } catch { /* empty */ }
+
+				const session = await authenticate( joinPayload.token || '' );
+				if ( session === null ) break;
+
 				// Get room info so client knows which port to connect to
-				const roomId = new TextDecoder().decode( msg.data ).trim().toUpperCase();
+				const roomId = ( joinPayload.roomId || '' ).trim().toUpperCase();
 				let room = RoomManager_GetRoom( roomId );
 				let attemptedRoomAutocreate = false;
 				let roomCreateResult = null;
@@ -306,6 +355,7 @@ async function handleSession( wt, address ) {
 						id: room.id,
 						port: room.port,
 						map: room.map,
+						mod: room.mod,
 						maxPlayers: room.maxPlayers,
 						hostName: room.hostName,
 					};
@@ -399,6 +449,27 @@ async function startServer() {
 	Sys_Printf( 'Lobby server listening on port %d\n', CONFIG.port );
 	Sys_Printf( 'Rooms will spawn on ports 4434-4443\n\n' );
 
+	// Persistent hub room: Copper's own "start" map (its narrative hub level),
+	// always running, exempt from idle cleanup, so there's always somewhere
+	// for players to land and meet before picking a world to travel to.
+	const hub = await RoomManager_CreateRoom( {
+		map: 'start',
+		mod: 'mods/copper',
+		maxPlayers: 16,
+		hostName: 'Hub',
+		specificId: HUB_ROOM_ID,
+		persistent: true,
+	} );
+	if ( hub !== null ) {
+
+		Sys_Printf( 'Hub room ready: %s on port %d\n', hub.id, hub.port );
+
+	} else {
+
+		Sys_Printf( 'WARNING: failed to create hub room\n' );
+
+	}
+
 	// Start cleanup timer (every 5 minutes)
 	setInterval( () => {
 		const unhealthy = RoomManager_CleanupUnhealthyRooms();
@@ -412,8 +483,106 @@ async function startServer() {
 		}
 	}, 5 * 60 * 1000 );
 
+	// Login HTTP endpoint runs alongside the QUIC lobby (same certs, different port).
+	startLoginHttpServer( cert, key );
+
 	// Accept connections
 	await acceptConnections( listener );
+}
+
+// ---------------------------------------------------------------------------
+// Login HTTP endpoint
+// ---------------------------------------------------------------------------
+
+// Simple per-IP throttle so brute-forcing passwords isn't free. Not meant to
+// stop a determined attacker, just to raise the cost past "small friend
+// group" scale. Resets are implicit via the sliding window below.
+const _loginAttempts = new Map(); // ip -> array of timestamps (ms)
+const LOGIN_WINDOW_MS = 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 8;
+
+function _isRateLimited( ip ) {
+
+	const now = Date.now();
+	const attempts = ( _loginAttempts.get( ip ) || [] ).filter( ( t ) => now - t < LOGIN_WINDOW_MS );
+	attempts.push( now );
+	_loginAttempts.set( ip, attempts );
+	return attempts.length > LOGIN_MAX_ATTEMPTS;
+
+}
+
+function _corsHeaders() {
+
+	return {
+		'Access-Control-Allow-Origin': CONFIG.allowOrigin,
+		'Access-Control-Allow-Methods': 'POST, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type',
+		'Content-Type': 'application/json',
+	};
+
+}
+
+function startLoginHttpServer( cert, key ) {
+
+	Deno.serve( { port: CONFIG.httpPort, cert, key }, async ( req, info ) => {
+
+		if ( req.method === 'OPTIONS' ) {
+
+			return new Response( null, { status: 204, headers: _corsHeaders() } );
+
+		}
+
+		const url = new URL( req.url );
+
+		if ( req.method === 'POST' && url.pathname === '/login' ) {
+
+			const ip = info.remoteAddr.hostname;
+			if ( _isRateLimited( ip ) ) {
+
+				return new Response( JSON.stringify( { error: 'Too many attempts. Try again in a minute.' } ), {
+					status: 429, headers: _corsHeaders(),
+				} );
+
+			}
+
+			try {
+
+				const body = await req.json();
+				const username = String( body.username || '' ).slice( 0, 64 );
+				const password = String( body.password || '' ).slice( 0, 256 );
+
+				const user = await verifyPassword( username, password );
+				if ( user === null ) {
+
+					return new Response( JSON.stringify( { error: 'Invalid username or password.' } ), {
+						status: 401, headers: _corsHeaders(),
+					} );
+
+				}
+
+				const token = await createSession( user.username, user.isAdmin );
+				Sys_Printf( 'Login: %s from %s\n', user.username, ip );
+
+				return new Response( JSON.stringify( { token, username: user.username } ), {
+					status: 200, headers: _corsHeaders(),
+				} );
+
+			} catch ( e ) {
+
+				return new Response( JSON.stringify( { error: 'Bad request.' } ), {
+					status: 400, headers: _corsHeaders(),
+				} );
+
+			}
+
+		}
+
+		return new Response( 'Not found', { status: 404, headers: _corsHeaders() } );
+
+	} );
+
+	Sys_Printf( 'Login HTTPS endpoint listening on port %d\n', CONFIG.httpPort );
+
 }
 
 /**

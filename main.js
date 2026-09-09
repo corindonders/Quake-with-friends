@@ -6,6 +6,9 @@ import { COM_InitArgv } from './src/common.js';
 import { Host_Init, Host_Frame, Host_Shutdown } from './src/host.js';
 import { COM_FetchPak, COM_AddPack, COM_LoadMod } from './src/pak.js';
 import { Cbuf_AddText } from './src/cmd.js';
+import { requireSession } from './src/auth_client.js';
+import { WT_SetAuthToken } from './src/net_webtransport.js';
+import { TravelUI_Init } from './src/travel_ui.js';
 import { cls, cl } from './src/client.js';
 import { sv } from './src/server.js';
 import { scene, camera } from './src/gl_rmain.js';
@@ -22,6 +25,12 @@ const parms = {
 async function main() {
 
 	try {
+
+		// Redirects to login.html if not signed in.
+		const session = requireSession();
+		if ( session === null ) return;
+
+		WT_SetAuthToken( session.token );
 
 		Sys_Init();
 
@@ -121,6 +130,8 @@ async function main() {
 
 		}
 
+		TravelUI_Init();
+
 		// Preload custom menu images
 		try {
 
@@ -142,11 +153,27 @@ async function main() {
 		}
 
 		// Check URL parameters for auto-join
-		const roomId = urlParams.get( 'room' );
+		let roomId = urlParams.get( 'room' );
+		let serverUrl = urlParams.get( 'server' );
+
+		// No explicit map or room requested: land in the persistent hub room
+		// on the configured lobby server, same as everyone else who just
+		// logged in -- that's the "meet up before picking a world" flow.
+		if ( ! mapName && ! roomId ) {
+
+			const lobby = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) || null;
+			if ( lobby ) {
+
+				roomId = 'HUBWLD';
+				serverUrl = 'https://' + lobby;
+
+			}
+
+		}
 
 		if ( roomId ) {
 
-			const serverUrl = urlParams.get( 'server' ) || 'https://wts.mrdoob.com:4433';
+			serverUrl = serverUrl || 'https://wts.mrdoob.com:4433';
 			const connectUrl = serverUrl + '?room=' + encodeURIComponent( roomId );
 			Sys_Printf( 'Auto-joining room: %s\\n', roomId );
 			Cbuf_AddText( 'connect "' + connectUrl + '"\n' );

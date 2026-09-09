@@ -6,3 +6,7 @@
 /pak1.pak
 /pak2.pak
 /pak3.pak
+
+# User accounts/sessions database (password hashes) and TLS keys -- never commit.
+/server/data/
+/server/*.pem

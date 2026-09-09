@@ -5,8 +5,94 @@ A dedicated server for Three-Quake that runs headlessly using Deno and WebTransp
 ## Requirements
 
 - [Deno](https://deno.land/) v1.40 or later
-- A copy of `pak0.pak` from Quake
-- TLS certificates (required for WebTransport)
+- A copy of `pak0.pak` (and `pak1.pak` for the registered content some mods
+  need — see below) from Quake
+- TLS certificates (required for WebTransport and the login endpoint)
+
+## Lobby + rooms + hub + login (current architecture)
+
+This is what actually runs in production: `lobby_server.js` listens on one
+port and spawns a separate `game_server.js` process per room (each one a
+real headless copy of the engine — the same `src/` code the browser runs,
+not a reimplementation). `room_process_manager.ts` manages those child
+processes; `rooms.ts` is an older, unused single-process room registry —
+ignore it.
+
+On top of that: `auth.ts` + `manage_users.ts` add admin-managed login
+accounts (Deno KV, PBKDF2-hashed passwords, no self-signup), and
+`lobby_server.js` requires a valid session token on every lobby request
+(list/create/join) — that's the gate a client has to pass before it even
+learns a room's port. It also always keeps one persistent room alive: the
+hub (`HUBWLD`, Copper's own `start` map), for players to land in after
+logging in before picking a world.
+
+**Security note:** the token gate is enforced at the lobby only. The room
+processes themselves (`game_server.js` / `net_webtransport_server.ts`)
+don't yet re-verify who's connecting — reasonable for a small trusted group
+where room ports/IDs are never listed anywhere except an authenticated
+lobby response, but worth knowing if you ever open this beyond people you
+trust. `auth.ts` already has `createRoomTicket`/`verifyRoomTicket` (HMAC via
+`THREE_QUAKE_SECRET`) ready for wiring into the room handshake if you want
+to close that gap later.
+
+### 1. Create accounts
+
+```bash
+cd server
+deno run --allow-read --allow-write --unstable-kv manage_users.ts add yourname yourpassword --admin
+deno run --allow-read --allow-write --unstable-kv manage_users.ts add friendname somepassword
+deno run --allow-read --allow-write --unstable-kv manage_users.ts list
+```
+
+Accounts live in `server/data/users.db` (Deno KV, gitignored — never commit it).
+
+### 2. Generate TLS certs (dev) and set the shared secret
+
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
+export THREE_QUAKE_SECRET=$(openssl rand -hex 32)   # needed even though room tickets aren't checked yet
+```
+
+### 3. Run the lobby
+
+```bash
+deno run --allow-net --allow-read --allow-write --allow-env --allow-run \
+  --unstable-net --unstable-kv --config deno.json lobby_server.js \
+  -port 4433 -httpport 4443 -cert cert.pem -key key.pem -pak ../pak0.pak \
+  -allow-origin https://yourname.github.io
+```
+
+- `-port` — WebTransport lobby port (rooms spawn on 4434+)
+- `-httpport` — HTTPS login endpoint (`POST /login`, same certs)
+- `-allow-origin` — CORS origin allowed to call `/login` (your deployed client's origin)
+- `-verbose` (or `THREE_QUAKE_VERBOSE=1`) — full logs instead of the quiet allowlist in `sys_server.ts`
+- pak1.pak/pak2.pak next to `pak0.pak` are picked up automatically if present (registered content)
+
+### 4. Point the client at it
+
+Edit `server-config.js` at the repo root:
+
+```js
+window.THREE_QUAKE_SERVER = {
+	lobby: 'yourdomain.com:4433',
+	loginUrl: 'https://yourdomain.com:4443/login',
+};
+```
+
+Loading `index.html` with no `?map=`/`?room=` now requires login
+(redirects to `login.html`) and then auto-joins the hub. The in-hub
+"Travel" button (`src/travel_ui.js`) lists worlds from the root
+`mapdb.json` and creates/joins a room for whichever one is picked — mod
+dirs are passed straight through to the room process the same way
+`?mod=` works for the browser client (`COM_LoadMod`, now Deno-side too).
+
+## Legacy prototype (`main.ts` / `host_server.ts`)
+
+The rest of this document (below) describes an earlier, incomplete
+single-process prototype (`main.ts`, `host_server.ts`,
+`net_webtransport_server_test.ts`) that never got full QuakeC/physics
+integration — superseded by the lobby/room architecture above. Left as-is;
+not the thing to run.
 
 ## Quick Start
 

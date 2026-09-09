@@ -16,6 +16,17 @@ import { set_key_dest, key_menu } from './keys.js';
 // WebTransport connection state
 let wt_initialized = false;
 
+// Session token from the login flow (see login.html / src/auth_client.js).
+// Sent with every lobby request (list/create/join) so the lobby server can
+// reject unauthenticated clients before handing out a room's port.
+let wt_authToken = '';
+
+export function WT_SetAuthToken( token ) {
+
+	wt_authToken = token || '';
+
+}
+
 // Timeout for lobby room join operations (in milliseconds)
 // This should be long enough for slow connections but short enough to not hang indefinitely
 const ROOM_JOIN_TIMEOUT_MS = 10000; // 10 seconds
@@ -295,11 +306,13 @@ export async function WT_QueryRooms( serverUrl ) {
 		const writer = stream.writable.getWriter();
 		const reader = stream.readable.getReader();
 
-		// Send LOBBY_LIST request: [type:1][length:2][data:0]
-		const request = new Uint8Array( 3 );
+		// Send LOBBY_LIST request: [type:1][length:2][json {token}]
+		const listData = new TextEncoder().encode( JSON.stringify( { token: wt_authToken } ) );
+		const request = new Uint8Array( 3 + listData.length );
 		request[ 0 ] = LOBBY_LIST;
-		request[ 1 ] = 0; // length low byte
-		request[ 2 ] = 0; // length high byte
+		request[ 1 ] = listData.length & 0xff;
+		request[ 2 ] = ( listData.length >> 8 ) & 0xff;
+		request.set( listData, 3 );
 		await writer.write( request );
 
 		// Read response header
@@ -438,7 +451,7 @@ export async function WT_CreateRoom( serverUrl, config ) {
 		const reader = stream.readable.getReader();
 
 		// Send LOBBY_CREATE request: [type:1][length:2][json config]
-		const configJson = JSON.stringify( config );
+		const configJson = JSON.stringify( Object.assign( { token: wt_authToken }, config ) );
 		const configData = new TextEncoder().encode( configJson );
 		const request = new Uint8Array( 3 + configData.length );
 		request[ 0 ] = LOBBY_CREATE;
@@ -793,7 +806,7 @@ export async function WT_Connect( host ) {
 		if ( roomId ) {
 
 			Con_Printf( 'Sending LOBBY_JOIN for room: ' + roomId + '\n' );
-			const roomData = new TextEncoder().encode( roomId );
+			const roomData = new TextEncoder().encode( JSON.stringify( { token: wt_authToken, roomId } ) );
 			const request = new Uint8Array( 3 + roomData.length );
 			request[ 0 ] = LOBBY_JOIN;
 			request[ 1 ] = roomData.length & 0xff;
