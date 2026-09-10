@@ -27,11 +27,81 @@ import { NET_NewQSocket, NET_FreeQSocket } from './net_main.js';
 import { net_message } from './net.js';
 import { M_ConnectionError, M_Menu_Main_f } from './menu.js';
 import { set_key_dest, key_menu } from './keys.js';
+import { Cbuf_AddText } from './cmd.js';
 
 let ws_initialized = false;
 
 // Session token from the login flow (see login.html / src/auth_client.js).
 let ws_authToken = '';
+
+/*
+=============================================================================
+
+Auto-reconnect -- when the single persistent connection drops without the
+player asking for it (network blip, room process restart, laptop woke from
+sleep), retry the exact same "connect <host>" a few times with backoff
+instead of stranding the player on a dead connection. Deliberate
+disconnects (WS_Close, e.g. the Travel UI's "disconnect" before switching
+rooms) never trigger this -- see the `intentional` flag on WSConnection.
+
+Status is reported via Con_Printf only: while disconnected the engine
+already shows a full-screen console (see ca_disconnected in client.js), so
+these messages are visible with no extra DOM/overlay of any kind.
+=============================================================================
+*/
+
+const RECONNECT_DELAYS_MS = [ 1000, 2000, 4000, 8000, 8000, 8000 ];
+const MAX_RECONNECT_ATTEMPTS = RECONNECT_DELAYS_MS.length;
+
+let lastConnectHost = null; // host string from the last successful game connection
+let reconnectAttempt = 0;
+let reconnectTimer = null;
+let isReconnecting = false; // true while a retry-driven connect() is in flight
+
+function WS_CancelReconnect() {
+
+	if ( reconnectTimer != null ) {
+
+		clearTimeout( reconnectTimer );
+		reconnectTimer = null;
+
+	}
+
+	reconnectAttempt = 0;
+	isReconnecting = false;
+
+}
+
+function WS_ScheduleReconnect() {
+
+	if ( reconnectTimer != null ) return; // already counting down to the next try
+	if ( ! lastConnectHost ) return;
+
+	if ( reconnectAttempt >= MAX_RECONNECT_ATTEMPTS ) {
+
+		Con_Printf( 'Could not reconnect after ' + MAX_RECONNECT_ATTEMPTS + ' attempts. Use the menu to try again.\n' );
+		WS_CancelReconnect();
+		M_Menu_Main_f();
+		set_key_dest( key_menu );
+		return;
+
+	}
+
+	const delay = RECONNECT_DELAYS_MS[ reconnectAttempt ];
+	reconnectAttempt ++;
+
+	Con_Printf( 'Connection lost. Reconnecting in ' + ( delay / 1000 ) + 's... (attempt ' +
+		reconnectAttempt + '/' + MAX_RECONNECT_ATTEMPTS + ')\n' );
+
+	reconnectTimer = setTimeout( () => {
+
+		reconnectTimer = null;
+		isReconnecting = true;
+		Cbuf_AddText( 'connect "' + lastConnectHost + '"\n' );
+
+	}, delay );
+
+}
 
 export function WS_SetAuthToken( token ) {
 
@@ -49,6 +119,7 @@ class WSConnection {
 		this.connected = false;
 		this.pendingMessages = []; // { data: Uint8Array, reliable: boolean }
 		this.error = null;
+		this.intentional = false; // set by WS_Close -- suppresses auto-reconnect
 
 	}
 
@@ -339,6 +410,12 @@ export async function WS_Connect( host ) {
 					conn.connected = false;
 					Con_Printf( 'Connection closed' + ( event.reason ? ': ' + event.reason : '' ) + '\n' );
 
+					if ( ! conn.intentional ) {
+
+						WS_ScheduleReconnect();
+
+					}
+
 				} else {
 
 					reject( new Error( event.reason || 'Connection closed' ) );
@@ -381,12 +458,29 @@ export async function WS_Connect( host ) {
 		sock.driverdata = conn;
 
 		Con_Printf( 'WebSocket connection established\n' );
+
+		// A reconnect just succeeded (or this was a fresh connect) -- either
+		// way we have a live connection now, so forget any retry state.
+		lastConnectHost = host;
+		WS_CancelReconnect();
+
 		return sock;
 
 	} catch ( error ) {
 
 		NET_FreeQSocket( sock );
 		Con_Printf( 'WS_Connect error: ' + error.message + '\n' );
+
+		// A retry attempt itself failed (server/room still unreachable) --
+		// keep retrying with backoff instead of bailing out to the menu.
+		if ( isReconnecting && reconnectAttempt < MAX_RECONNECT_ATTEMPTS ) {
+
+			WS_ScheduleReconnect();
+			return null;
+
+		}
+
+		WS_CancelReconnect();
 
 		if ( typeof window !== 'undefined' && window.location.search.includes( 'room=' ) ) {
 
@@ -497,9 +591,14 @@ export function WS_CanSendUnreliableMessage( sock ) {
 
 export function WS_Close( sock ) {
 
+	// A deliberate close (user disconnect, Travel UI switching rooms, etc.)
+	// -- don't try to auto-reconnect to what we're intentionally leaving.
+	WS_CancelReconnect();
+
 	const conn = sock.driverdata;
 	if ( ! conn ) return;
 
+	conn.intentional = true;
 	conn.connected = false;
 
 	try { conn.socket.close(); } catch ( e ) { /* ignore */ }
