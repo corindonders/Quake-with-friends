@@ -21,11 +21,6 @@ import { in_mlook, in_strafe, cl_forwardspeed, cl_sidespeed, cl_yawspeed, cl_pit
 import { V_StopPitchDrift } from './view.js';
 import { host_frametime } from './host.js';
 import { PITCH, YAW } from './quakedef.js';
-import {
-	Touch_IsMobile, Touch_Init, Touch_Enable, Touch_Disable, Touch_IsEnabled,
-	Touch_GetMoveInput, Touch_GetLookDelta,
-	Touch_ShowMenu, Touch_HideMenu, Touch_SetMenuCallback, Touch_RequestFullscreen
-} from './touch.js';
 import { M_TouchInput } from './menu.js';
 import { S_UnlockAudio } from './snd_dma.js';
 import { isXRActive, XR_PollInput, xrInput } from './webxr.js';
@@ -64,9 +59,6 @@ let mouseactive = false;
 let pointerLocked = false;
 let targetElement = null;
 
-// Mobile/touch state
-let isMobile = false;
-
 // Meta Quest — disables pointer lock and fullscreen
 let isQuest = false;
 
@@ -100,14 +92,6 @@ function requestPointerLock() {
 	if ( pointerLocked || isQuest || targetElement == null ) return;
 
 	targetElement.requestPointerLock();
-
-}
-
-function requestFullscreen() {
-
-	if ( isQuest ) return;
-
-	Touch_RequestFullscreen();
 
 }
 
@@ -259,7 +243,8 @@ function GP_Poll( cmd ) {
 	if ( ry !== 0 ) {
 
 		V_StopPitchDrift();
-		cl.viewangles[ PITCH ] += ry * cl_pitchspeed.value * host_frametime * gp_look_pitch.value;
+		const pitchDir = gp_invert_look.value ? - 1 : 1;
+		cl.viewangles[ PITCH ] += ry * pitchDir * cl_pitchspeed.value * host_frametime * gp_look_pitch.value;
 		if ( cl.viewangles[ PITCH ] > 80 )
 			cl.viewangles[ PITCH ] = 80;
 		if ( cl.viewangles[ PITCH ] < - 70 )
@@ -273,8 +258,9 @@ function GP_Poll( cmd ) {
 const m_filter = { name: 'm_filter', string: '0', value: 0 };
 // Gamepad look tuning (standard mapping right stick).
 // Defaults keep yaw/pitch even and slower than the prior hardcoded multiplier.
-const gp_look_yaw = { name: 'gp_look_yaw', string: '1', value: 1 };
-const gp_look_pitch = { name: 'gp_look_pitch', string: '1', value: 1 };
+export const gp_look_yaw = { name: 'gp_look_yaw', string: '1', value: 1 };
+export const gp_look_pitch = { name: 'gp_look_pitch', string: '1', value: 1 };
+export const gp_invert_look = { name: 'gp_invert_look', string: '0', value: 0 };
 
 let in_initialized = false;
 
@@ -345,16 +331,7 @@ function handleKeyDown( event ) {
 	// Only do this when actually playing, not during demo playback
 	if ( key_dest === key_game && prevKeyDest !== key_game && ! cls.demoplayback ) {
 
-		if ( isMobile ) {
-
-			Touch_Enable();
-			mouseactive = true;
-
-		} else if ( ! Touch_IsMobile() ) {
-
-			requestPointerLock();
-
-		}
+		requestPointerLock();
 
 	}
 
@@ -435,32 +412,10 @@ function handleMouseDown( event ) {
 
 	}
 
-	// On mobile, request fullscreen + landscape and enable touch controls
-	// Only when actually playing, not during demo playback
-	if ( isMobile ) {
+	// Request pointer lock only when in-game (not menu/console or demos)
+	if ( key_dest === key_game && ! cls.demoplayback ) {
 
-		// Request fullscreen only when actually playing a map (not menu, demo, or idle state)
-		if ( key_dest === key_game && cls.state === ca_connected && ! cls.demoplayback ) {
-
-			requestFullscreen();
-
-		}
-
-		if ( key_dest === key_game && ! cls.demoplayback && ! Touch_IsEnabled() ) {
-
-			Touch_Enable();
-			mouseactive = true;
-
-		}
-
-	} else {
-
-		// Request pointer lock only when in-game (not menu/console or demos), and not on mobile
-		if ( key_dest === key_game && ! cls.demoplayback && ! Touch_IsMobile() ) {
-
-			requestPointerLock();
-
-		}
+		requestPointerLock();
 
 	}
 
@@ -519,8 +474,7 @@ function handlePointerLockChange() {
 
 		// Show the menu when pointer lock is lost while in-game,
 		// but only if we actually had pointer lock before (not on failed requests)
-		// Skip this on mobile - touch controls handle menu via pause button
-		if ( ! isMobile && wasLocked && key_dest === key_game ) {
+		if ( wasLocked && key_dest === key_game ) {
 
 			Key_Event( K_ESCAPE, true );
 			Key_Event( K_ESCAPE, false );
@@ -539,31 +493,7 @@ function handleContextMenu( event ) {
 
 function handleVisibilityChange() {
 
-	// Placeholder for visibility change handling (wake lock is in touch.js for mobile)
-
-}
-
-function handleTouchStart( event ) {
-
-	if ( ! in_initialized ) return;
-
-	// Unlock audio on first user gesture
-	S_UnlockAudio();
-
-	// On mobile, request fullscreen only when actually playing a map (not menu, demo, or idle state)
-	if ( isMobile && key_dest === key_game && cls.state === ca_connected && ! cls.demoplayback ) {
-
-		requestFullscreen();
-
-	}
-
-	// During demo playback, tap to show menu
-	if ( key_dest === key_game && cls.demoplayback ) {
-
-		event.preventDefault();
-		M_TouchInput( 0, 0, 1, 1 ); // Coordinates don't matter, just triggers menu toggle
-
-	}
+	// Placeholder for future visibility-change handling.
 
 }
 
@@ -626,6 +556,7 @@ export function IN_Init( element ) {
 	Cvar_RegisterVariable( m_filter );
 	Cvar_RegisterVariable( gp_look_yaw );
 	Cvar_RegisterVariable( gp_look_pitch );
+	Cvar_RegisterVariable( gp_invert_look );
 
 	// Register commands
 	Cmd_AddCommand( 'force_centerview', IN_ForceCenterView );
@@ -642,23 +573,8 @@ export function IN_Init( element ) {
 
 	document.addEventListener( 'pointerlockchange', handlePointerLockChange );
 
-	// Add global touch handler for showing menu during demos
-	targetElement.addEventListener( 'touchstart', handleTouchStart, { passive: false } );
-
-	// Initialize touch controls for mobile
-	isMobile = Touch_IsMobile();
 	isQuest = /OculusBrowser|Quest/i.test( navigator.userAgent );
 
-	if ( isMobile ) {
-
-		// Always append touch UI to document.body for consistent positioning
-		Touch_Init( document.body );
-		Touch_SetMenuCallback( M_TouchInput );
-		Con_Printf( 'Mobile device detected - touch controls available\n' );
-
-	}
-
-	// Listen for visibility changes to re-acquire wake lock when tab becomes visible
 	document.addEventListener( 'visibilitychange', handleVisibilityChange );
 
 	mouseinitialized = true;
@@ -789,32 +705,6 @@ export function IN_Move( cmd ) {
 
 	if ( ! cmd ) return;
 
-	// Add touch input - touch look directly controls view angles (bypasses mlook checks)
-	if ( Touch_IsEnabled() ) {
-
-		const touchLook = Touch_GetLookDelta();
-
-		// Apply touch look directly to view angles
-		if ( touchLook.x !== 0 || touchLook.y !== 0 ) {
-
-			cl.viewangles[ YAW ] -= m_yaw.value * touchLook.x * sensitivity.value * 2;
-
-			cl.viewangles[ PITCH ] += m_pitch.value * touchLook.y * sensitivity.value * 2;
-			if ( cl.viewangles[ PITCH ] > 80 )
-				cl.viewangles[ PITCH ] = 80;
-			if ( cl.viewangles[ PITCH ] < - 70 )
-				cl.viewangles[ PITCH ] = - 70;
-
-		}
-
-		// Add touch joystick movement
-		const touchMove = Touch_GetMoveInput();
-
-		cmd.forwardmove += cl_forwardspeed.value * touchMove.forward;
-		cmd.sidemove += cl_sidespeed.value * touchMove.right;
-
-	}
-
 	// add mouse X/Y movement to cmd (from in_win.c IN_MouseMove)
 	if ( ( in_strafe.state & 1 ) || ( lookstrafe.value && ( in_mlook.state & 1 ) ) )
 		cmd.sidemove += m_side.value * mx;
@@ -903,93 +793,10 @@ export function IN_IsPointerLocked() {
 IN_RequestPointerLock
 
 Request pointer lock from a user gesture context (e.g. menu selection).
-Only applies on desktop; mobile uses fullscreen instead.
 ===========
 */
 export function IN_RequestPointerLock() {
 
-	if ( ! isMobile ) {
-
-		requestPointerLock();
-
-	}
-
-}
-
-/*
-===========
-IN_IsMobile
-
-Returns true if running on a mobile device
-===========
-*/
-export function IN_IsMobile() {
-
-	return isMobile;
-
-}
-
-/*
-===========
-IN_UpdateTouch
-
-Update touch control state based on key_dest.
-Should be called each frame.
-===========
-*/
-export function IN_UpdateTouch() {
-
-	if ( ! isMobile ) return;
-
-	if ( key_dest === key_game && cls.state === ca_connected && ! cls.demoplayback ) {
-
-		// In game (not demo, actually connected) - show game controls, hide menu controls
-		if ( ! Touch_IsEnabled() ) {
-
-			Touch_Enable();
-			mouseactive = true;
-
-		}
-
-		Touch_HideMenu();
-
-	} else if ( key_dest === key_game && cls.demoplayback ) {
-
-		// Demo playback - hide game controls, show menu overlay
-		// Tapping will trigger menu via M_TouchInput which sends Escape
-		if ( Touch_IsEnabled() ) {
-
-			Touch_Disable();
-			mouseactive = false;
-
-		}
-
-		Touch_ShowMenu();
-
-	} else if ( key_dest === key_menu ) {
-
-		// In menu - hide game controls, show menu controls
-		if ( Touch_IsEnabled() ) {
-
-			Touch_Disable();
-			mouseactive = false;
-
-		}
-
-		Touch_ShowMenu();
-
-	} else {
-
-		// Console or other - hide all controls
-		if ( Touch_IsEnabled() ) {
-
-			Touch_Disable();
-			mouseactive = false;
-
-		}
-
-		Touch_HideMenu();
-
-	}
+	requestPointerLock();
 
 }

@@ -32,7 +32,7 @@ import { S_Init, S_Update, S_Shutdown, S_StopAllSounds, S_SetCallbacks } from '.
 import { CDAudio_Init, CDAudio_Update, CDAudio_Shutdown } from './cd_audio.js';
 import { Sbar_Init, Sbar_SetExternals } from './sbar.js';
 import { CL_Init, CL_SendCmd, CL_ReadFromServer, CL_DecayLights, CL_Disconnect, CL_NextDemo, cl_name } from './cl_main.js';
-import { IN_Init, IN_Commands, IN_Shutdown, IN_UpdateTouch, IN_RequestPointerLock } from './in_web.js';
+import { IN_Init, IN_Commands, IN_Shutdown, IN_RequestPointerLock } from './in_web.js';
 import { cls, cl, SIGNONS, ca_connected, ca_dedicated } from './client.js';
 import { key_dest, key_game, Key_SetExternals, set_key_dest } from './keys.js';
 import { r_origin, vpn, vright, vup } from './render.js';
@@ -526,9 +526,6 @@ function _Host_Frame_Internal( time ) {
 
 	// allow mice or other external controllers to add commands
 	IN_Commands();
-
-	// update touch controls state based on key_dest
-	IN_UpdateTouch();
 
 	// process console commands
 	Cbuf_Execute();

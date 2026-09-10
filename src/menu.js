@@ -17,7 +17,7 @@ import { scr_viewsize, scr_con_current } from './gl_screen.js';
 import { v_gamma } from './view.js';
 import { gl_texturemode, GL_UpdateTextureFiltering } from './glquake.js';
 import { skill, coop, teamplay, deathmatch, svs } from './server.js';
-import { Touch_ExitFullscreen } from './touch.js';
+import { gp_look_yaw, gp_look_pitch, gp_invert_look } from './in_web.js';
 import { Draw_GetVirtualWidth, Draw_GetVirtualHeight } from './gl_draw.js';
 import { SAVEGAME_COMMENT_LENGTH } from './quakedef.js';
 
@@ -49,6 +49,7 @@ export const m_gameoptions = 16;
 export const m_search = 17;
 export const m_slist = 18;
 export const m_credits = 19;
+export const m_gamepad = 20;
 
 export let m_state = m_none;
 export let m_entersound = false;
@@ -668,8 +669,6 @@ function M_Main_Key( key ) {
 					M_Menu_Credits_f();
 					break;
 				case 4:
-					// Exit fullscreen when entering quit menu
-					Touch_ExitFullscreen();
 					M_Menu_Quit_f();
 					break;
 
@@ -1602,7 +1601,7 @@ function M_AdjustSliders( dir ) {
 ==============================================================================
 */
 
-const OPTIONS_ITEMS = 13;
+const OPTIONS_ITEMS = 14;
 let m_options_cursor = 0;
 
 function M_Menu_Options_f() {
@@ -1659,6 +1658,8 @@ function M_Options_Draw() {
 	M_Print( 16, 128, '             Crosshair' );
 	M_DrawCheckbox( 220, 128, Cvar_VariableValue( 'crosshair' ) );
 
+	M_Print( 16, 136, '      Controller Setup' );
+
 	// cursor
 	M_DrawCharacter( 200, 32 + m_options_cursor * 8, 12 + ( ( Math.floor( _realtime_get() * 4 ) ) & 1 ) );
 
@@ -1696,6 +1697,9 @@ function M_Options_Key( key ) {
 					Cbuf_AddText( 'gamma 1\n' );
 					Cbuf_AddText( 'volume 0.4\n' );
 					break;
+				case 13:
+					M_Menu_GamepadOptions_f();
+					break;
 				default:
 					M_AdjustSliders( 1 );
 					break;
@@ -1721,6 +1725,137 @@ function M_Options_Key( key ) {
 		case K_RIGHTARROW:
 			M_AdjustSliders( 1 );
 			break;
+
+	}
+
+}
+
+/*
+==============================================================================
+
+			GAMEPAD OPTIONS MENU
+
+==============================================================================
+*/
+
+const GAMEPAD_ITEMS = 3;
+let gamepad_cursor = 0;
+
+// Sensitivity cvars run 0.25-3.0; the standard Xbox-layout mapping in
+// in_web.js's GP_Poll is what actually reads these.
+const GP_SENS_MIN = 0.25;
+const GP_SENS_MAX = 3.0;
+
+function M_Menu_GamepadOptions_f() {
+
+	setKeyDest( key_menu );
+	m_state = m_gamepad;
+	m_entersound = true;
+
+}
+
+function M_GamepadOptions_Draw() {
+
+	if ( ! _Draw_CachePic ) return;
+
+	M_DrawTransPic( 16, 4, _Draw_CachePic( 'gfx/qplaque.lmp' ) );
+	const p = _Draw_CachePic( 'gfx/p_option.lmp' );
+	M_DrawPic( ( 320 - ( p ? p.width : 0 ) ) / 2, 4, p );
+
+	M_Print( 16, 32, '       Look Sens. X' );
+	let r = ( gp_look_yaw.value - GP_SENS_MIN ) / ( GP_SENS_MAX - GP_SENS_MIN );
+	M_DrawSlider( 220, 32, r );
+
+	M_Print( 16, 40, '       Look Sens. Y' );
+	r = ( gp_look_pitch.value - GP_SENS_MIN ) / ( GP_SENS_MAX - GP_SENS_MIN );
+	M_DrawSlider( 220, 40, r );
+
+	M_Print( 16, 48, '        Invert Look Y' );
+	M_DrawCheckbox( 220, 48, gp_invert_look.value );
+
+	M_Print( 16, 68, 'Connect a standard USB or' );
+	M_Print( 16, 76, 'Bluetooth gamepad and it' );
+	M_Print( 16, 84, 'works automatically -- left' );
+	M_Print( 16, 92, 'stick moves, right stick' );
+	M_Print( 16, 100, 'looks, A jumps, RT fires.' );
+
+	// cursor
+	M_DrawCharacter( 200, 32 + gamepad_cursor * 8, 12 + ( ( Math.floor( _realtime_get() * 4 ) ) & 1 ) );
+
+}
+
+function M_GamepadOptions_Adjust( dir ) {
+
+	if ( _S_LocalSound ) _S_LocalSound( 'misc/menu3.wav' );
+
+	switch ( gamepad_cursor ) {
+
+		case 0: // look sensitivity X
+			Cvar_SetValue( 'gp_look_yaw', gp_look_yaw.value + dir * 0.25 );
+			if ( gp_look_yaw.value < GP_SENS_MIN ) Cvar_SetValue( 'gp_look_yaw', GP_SENS_MIN );
+			if ( gp_look_yaw.value > GP_SENS_MAX ) Cvar_SetValue( 'gp_look_yaw', GP_SENS_MAX );
+			break;
+
+		case 1: // look sensitivity Y
+			Cvar_SetValue( 'gp_look_pitch', gp_look_pitch.value + dir * 0.25 );
+			if ( gp_look_pitch.value < GP_SENS_MIN ) Cvar_SetValue( 'gp_look_pitch', GP_SENS_MIN );
+			if ( gp_look_pitch.value > GP_SENS_MAX ) Cvar_SetValue( 'gp_look_pitch', GP_SENS_MAX );
+			break;
+
+		case 2: // invert look Y
+			Cvar_SetValue( 'gp_invert_look', ! gp_invert_look.value ? 1 : 0 );
+			break;
+
+	}
+
+}
+
+function M_GamepadOptions_Key( key ) {
+
+	switch ( key ) {
+
+		case K_ESCAPE:
+			M_Menu_Options_f();
+			break;
+		case K_ENTER:
+			m_entersound = true;
+			M_GamepadOptions_Adjust( 1 );
+			break;
+		case K_UPARROW:
+			if ( _S_LocalSound ) _S_LocalSound( 'misc/menu1.wav' );
+			gamepad_cursor --;
+			if ( gamepad_cursor < 0 )
+				gamepad_cursor = GAMEPAD_ITEMS - 1;
+			break;
+		case K_DOWNARROW:
+			if ( _S_LocalSound ) _S_LocalSound( 'misc/menu1.wav' );
+			gamepad_cursor ++;
+			if ( gamepad_cursor >= GAMEPAD_ITEMS )
+				gamepad_cursor = 0;
+			break;
+		case K_LEFTARROW:
+			M_GamepadOptions_Adjust( - 1 );
+			break;
+		case K_RIGHTARROW:
+			M_GamepadOptions_Adjust( 1 );
+			break;
+
+	}
+
+}
+
+// Gamepad options touch - items at y=32, 8px spacing
+function M_GamepadOptions_Touch( vx, vy ) {
+
+	if ( vy >= 32 && vy < 32 + GAMEPAD_ITEMS * 8 ) {
+
+		const item = Math.floor( ( vy - 32 ) / 8 );
+		if ( item >= 0 && item < GAMEPAD_ITEMS ) {
+
+			gamepad_cursor = item;
+			M_GamepadOptions_Key( K_ENTER );
+
+		}
 
 	}
 
@@ -2280,6 +2415,7 @@ export function M_Init() {
 	Cmd_AddCommand( 'menu_quit', M_Menu_Quit_f );
 	Cmd_AddCommand( 'menu_lanconfig', M_Menu_LanConfig_f );
 	Cmd_AddCommand( 'menu_gameoptions', M_Menu_GameOptions_f );
+	Cmd_AddCommand( 'menu_gamepad', M_Menu_GamepadOptions_f );
 
 }
 
@@ -2306,6 +2442,7 @@ export function M_Keydown( key ) {
 		case m_quit: M_Quit_Key( key ); return;
 		case m_lanconfig: M_LanConfig_Key( key ); return;
 		case m_gameoptions: M_GameOptions_Key( key ); return;
+		case m_gamepad: M_GamepadOptions_Key( key ); return;
 		default: return;
 
 	}
@@ -2355,6 +2492,7 @@ export function M_Draw() {
 		case m_quit: M_Quit_Draw(); break;
 		case m_lanconfig: M_LanConfig_Draw(); break;
 		case m_gameoptions: M_GameOptions_Draw(); break;
+		case m_gamepad: M_GamepadOptions_Draw(); break;
 
 	}
 
@@ -2451,6 +2589,10 @@ export function M_TouchInput( touchX, touchY, screenWidth, screenHeight ) {
 
 		case m_gameoptions:
 			M_GameOptions_Touch( vx, vy );
+			break;
+
+		case m_gamepad:
+			M_GamepadOptions_Touch( vx, vy );
 			break;
 
 	}
