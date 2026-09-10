@@ -241,6 +241,8 @@ export const r_waterwarp = { name: 'r_waterwarp', string: '1', value: 1 };
 export const r_fullbright = { name: 'r_fullbright', string: '0', value: 0 };
 export const r_lightmap = { name: 'r_lightmap', string: '0', value: 0 };
 export const r_shadows = { name: 'r_shadows', string: '0', value: 0 };
+// Real (Three.js shadow-map) shadows from dynamic lights, replacing/supplementing the flat blob shadow above.
+export const r_shadowmaps = { name: 'r_shadowmaps', string: '1', value: 1, archive: true };
 export const r_mirroralpha = { name: 'r_mirroralpha', string: '1', value: 1 };
 export const r_wateralpha = { name: 'r_wateralpha', string: '1', value: 1 };
 export const r_dynamic = { name: 'r_dynamic', string: '1', value: 1 };

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Con_Printf } from './common.js';
 import { Cvar_RegisterVariable as Cvar_RegisterVariable_impl, Cvar_SetValue as Cvar_SetValue_impl } from './cvar.js';
 import { d_lightstylevalue, r_viewleaf, r_norefresh, r_lightmap,
-	r_fullbright, r_drawentities, r_drawviewmodel, r_shadows,
+	r_fullbright, r_drawentities, r_drawviewmodel, r_shadows, r_shadowmaps,
 	r_mirroralpha, r_wateralpha, r_dynamic, r_novis, r_speeds,
 	gl_clear, gl_texsort, gl_cull, gl_smoothmodels, gl_affinemodels,
 	gl_polyblend, gl_flashblend, gl_playermip, gl_nocolors,
@@ -134,6 +134,7 @@ export function R_Init() {
 		_Cvar_RegisterVariable( r_drawentities );
 		_Cvar_RegisterVariable( r_drawviewmodel );
 		_Cvar_RegisterVariable( r_shadows );
+		_Cvar_RegisterVariable( r_shadowmaps );
 		_Cvar_RegisterVariable( r_mirroralpha );
 		_Cvar_RegisterVariable( r_wateralpha );
 		_Cvar_RegisterVariable( r_dynamic );

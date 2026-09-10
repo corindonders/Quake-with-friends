@@ -1501,6 +1501,15 @@ export function R_DrawBrushModel( e ) {
 				}
 
 				const mesh = new THREE.Mesh( geom, material );
+				// Only lit (lightmapped) surfaces are worth shadowing -- unlit ones
+				// (sky, no-lightmap fallback) wouldn't show a shadow anyway.
+				if ( material.isMeshLambertMaterial ) {
+
+					mesh.castShadow = true;
+					mesh.receiveShadow = true;
+
+				}
+
 				brushGroup.add( mesh );
 
 				// Track surfaces with time-based animation for per-frame material updates
@@ -2609,6 +2618,13 @@ function R_BuildWorldMeshes() {
 		// Name for debugging (texture name + lightmap number)
 		const texName = t.name || '';
 		batchedMesh.name = `world_${texName}_lm${group.lmNum}`;
+
+		if ( material.isMeshLambertMaterial ) {
+
+			batchedMesh.castShadow = true;
+			batchedMesh.receiveShadow = true;
+
+		}
 
 		// Add each surface's geometry to the batch
 		for ( const surfData of group.surfaceData ) {

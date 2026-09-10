@@ -196,6 +196,12 @@ export function VID_Init( palette ) {
 	renderer.autoClear = false; // we manage clearing ourselves, like Quake did
 	renderer.sortObjects = false; // we sort manually via BSP front-to-back
 
+	// Real shadow maps (dynamic lights casting shadows), see r_shadowmaps cvar.
+	// PCFShadowMap over PCFSoftShadowMap: a handful of dlights each do a 6-pass
+	// cubemap render, softening isn't worth the extra cost here.
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = THREE.PCFShadowMap;
+
 	// Enable tone mapping for brightness control
 	// LinearToneMapping applies exposure without additional curve
 	renderer.toneMapping = THREE.LinearToneMapping;

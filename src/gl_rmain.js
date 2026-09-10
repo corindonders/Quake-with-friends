@@ -900,6 +900,8 @@ function R_DrawAliasModel( e ) {
 
 		mesh._quakeOwner = e;
 		_entityMeshCacheOwners.add( e );
+		mesh.castShadow = true;
+		mesh.receiveShadow = true;
 
 	}
 	if ( mesh && scene ) {

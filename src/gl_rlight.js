@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { DotProduct, VectorCopy, VectorSubtract, Length } from './mathlib.js';
 import { MAX_LIGHTSTYLES } from './quakedef.js';
 import { MAXLIGHTMAPS, d_lightstylevalue, r_framecount,
-	gl_flashblend, v_blend } from './glquake.js';
+	gl_flashblend, v_blend, r_shadowmaps } from './glquake.js';
 import { r_origin } from './render.js';
 import { cl_dlights } from './client.js';
 import { isXRActive, XR_SCALE } from './webxr.js';
@@ -100,10 +100,19 @@ function _getDlight( index ) {
 	if ( _dlightPool[ index ] != null ) return _dlightPool[ index ];
 
 	const light = new THREE.PointLight( 0xffaa44, 1, 300, 1 ); // decay=1 for linear falloff
+	// Cheap cubemap shadow res -- there can be several of these on screen at once.
+	light.shadow.mapSize.set( 512, 512 );
+	light.shadow.bias = -0.001;
 	_dlightPool[ index ] = light;
 	return light;
 
 }
+
+// Three.js renders each PointLight shadow as a 6-pass cubemap, so only the
+// closest MAX_SHADOW_DLIGHTS to the camera are allowed to cast one; the rest
+// still light the scene, they just don't shadow it.
+const MAX_SHADOW_DLIGHTS = 4;
+const _shadowDlightCandidates = [];
 
 export function R_RenderDlight( light, dlightIndex ) {
 
@@ -150,6 +159,7 @@ export function R_RenderDlights( cl, scene ) {
 		return;
 
 	r_dlightframecount = r_framecount + 1;
+	_shadowDlightCandidates.length = 0;
 
 	for ( let i = 0; i < MAX_DLIGHTS; i ++ ) {
 
@@ -163,6 +173,19 @@ export function R_RenderDlights( cl, scene ) {
 
 			// Active - update properties
 			const pointLight = R_RenderDlight( l, i );
+
+			pointLight.shadow.camera.far = Math.max( l.radius, 64 );
+
+			if ( r_shadowmaps.value !== 0 ) {
+
+				VectorSubtract( l.origin, r_origin, _dlightV );
+				_shadowDlightCandidates.push( { light: pointLight, dist: Length( _dlightV ) } );
+
+			} else {
+
+				pointLight.castShadow = false;
+
+			}
 
 			// intensity = time remaining (fades to 0 as light dies)
 			// distance = radius (shrinks via game's decay system)
@@ -200,6 +223,20 @@ export function R_RenderDlights( cl, scene ) {
 				pooledLight.parent.remove( pooledLight );
 
 			}
+
+		}
+
+	}
+
+	// Only the closest few dlights actually cast a shadow (each is an expensive
+	// 6-pass cubemap render); the rest still light the scene without one.
+	if ( _shadowDlightCandidates.length > 0 ) {
+
+		_shadowDlightCandidates.sort( ( a, b ) => a.dist - b.dist );
+
+		for ( let i = 0; i < _shadowDlightCandidates.length; i ++ ) {
+
+			_shadowDlightCandidates[ i ].light.castShadow = i < MAX_SHADOW_DLIGHTS;
 
 		}
 
