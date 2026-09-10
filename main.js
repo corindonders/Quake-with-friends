@@ -172,7 +172,16 @@ async function main() {
 		if ( joiningHub ) {
 
 			roomId = 'HUBWLD';
-			// Match the page's own protocol -- ws(s) is derived from this.
+
+		}
+
+		// Fill in the configured lobby whenever the URL didn't specify one --
+		// this covers both the hub above and an explicit ?room= share link
+		// (e.g. from menu.js's "share this room" flow), which only ever
+		// encodes the room ID, not a server. Match the page's own protocol --
+		// ws(s) is derived from this.
+		if ( roomId && ! serverUrl && window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) {
+
 			serverUrl = ( window.location.protocol === 'https:' ? 'https://' : 'http://' ) + window.THREE_QUAKE_SERVER.lobby;
 
 		}

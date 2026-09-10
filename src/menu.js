@@ -1423,23 +1423,12 @@ function M_GameOptions_Key( key ) {
 							setKeyDest( key_game );
 							m_state = m_none;
 
-							// Connect to the remote server as a client (not local game)
-							// The remote server is the authoritative game server
-							let connectUrl;
-							if ( room.port != null ) {
-
-								// Connect directly to room server on its port
-								const urlObj = new URL( serverUrl.replace( /^wt(s)?:\/\//, 'https://' ) );
-								urlObj.port = String( room.port );
-								// Remove trailing slash - URL.toString() adds one which breaks wts:// URLs
-								connectUrl = urlObj.toString().replace( /\/$/, '' ).replace( /^https:\/\//, 'wts://' );
-
-							} else {
-
-								// Fallback: connect through lobby
-								connectUrl = serverUrl + '?room=' + room.id;
-
-							}
+							// Connect through the lobby, same as every other join path
+							// (travel_ui.js, the hub auto-join, LAN Config below) -- room
+							// processes only listen on 127.0.0.1 and aren't reachable
+							// directly, whether locally or through a Cloudflare Tunnel,
+							// which only forwards the lobby's own port.
+							const connectUrl = serverUrl + '?room=' + room.id;
 
 							Cbuf_AddText( 'connect "' + connectUrl + '"\n' );
 							return;
