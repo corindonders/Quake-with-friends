@@ -50,7 +50,7 @@
 			height: 100%;
 			background: #fff;
 		}
-		#loading-maps-link {
+		#loading-back-link {
 			position: absolute;
 			bottom: 24px;
 			left: 0;
@@ -59,11 +59,11 @@
 			font-family: 'Trebuchet MS', 'Segoe UI', Verdana, sans-serif;
 			font-size: 12px;
 		}
-		#loading-maps-link a {
+		#loading-back-link a {
 			color: #8a7d6e;
 			text-decoration: none;
 		}
-		#loading-maps-link a:hover {
+		#loading-back-link a:hover {
 			color: #d8cfc4;
 		}
 	</style>
@@ -71,21 +71,9 @@
 <body>
 	<div id="loading">
 		<div id="loading-bar"><div id="loading-progress"></div></div>
-		<div id="loading-maps-link"><a href="maps.html">browse maps</a> &middot; <a href="wiki.html">wiki</a><span id="loading-admin-link"></span></div>
+		<div id="loading-back-link"><a href="start.html">&larr; back</a></div>
 	</div>
 	<script src="server-config.js"></script>
-	<script>
-		try {
-
-			const session = JSON.parse( localStorage.getItem( 'tq_session' ) || 'null' );
-			if ( session && session.isAdmin ) {
-
-				document.getElementById( 'loading-admin-link' ).innerHTML = ' &middot; <a href="admin.html">admin</a>';
-
-			}
-
-		} catch ( e ) { /* no session yet */ }
-	</script>
 	<script type="importmap">
 	{
 		"imports": {

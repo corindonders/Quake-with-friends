@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Three-Quake — Start</title>
+	<link rel="icon" type="image/svg+xml" href="icon.svg">
+	<link rel="apple-touch-icon" href="icon.png">
+	<style>
+		:root {
+			--bg: #0b0908;
+			--panel: rgba(23, 19, 16, 0.88);
+			--panel-border: #332920;
+			--text: #d8cfc4;
+			--text-dim: #8a7d6e;
+			--accent: #b23b2e;
+			--accent-bright: #e0523f;
+		}
+
+		* { box-sizing: border-box; }
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			min-height: 100%;
+			background: var(--bg) url('background.webp') center / cover no-repeat fixed;
+			color: var(--text);
+			font-family: 'Trebuchet MS', 'Segoe UI', Verdana, sans-serif;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.card {
+			width: 360px;
+			background: var(--panel);
+			backdrop-filter: blur(6px);
+			border: 1px solid var(--panel-border);
+			border-radius: 8px;
+			padding: 32px;
+		}
+
+		.card img { width: 44px; height: 44px; display: block; margin: 0 auto 12px; }
+
+		h1 {
+			margin: 0 0 4px;
+			font-size: 18px;
+			text-align: center;
+			font-weight: 600;
+		}
+
+		p.sub {
+			margin: 0 0 24px;
+			text-align: center;
+			font-size: 12.5px;
+			color: var(--text-dim);
+		}
+
+		nav {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+		}
+
+		nav a {
+			display: block;
+			text-align: center;
+			text-decoration: none;
+			color: var(--text);
+			background: #0f0c0a;
+			border: 1px solid var(--panel-border);
+			padding: 12px;
+			border-radius: 4px;
+			font-size: 14px;
+			font-weight: 600;
+			letter-spacing: 0.3px;
+			transition: border-color 0.15s, background 0.15s;
+		}
+
+		nav a:hover { border-color: var(--accent); background: #1e1712; }
+
+		nav a.primary {
+			background: var(--accent);
+			border-color: var(--accent);
+			color: #fff;
+		}
+
+		nav a.primary:hover { background: var(--accent-bright); border-color: var(--accent-bright); }
+
+		.sep {
+			margin: 18px 0 4px;
+			border: none;
+			border-top: 1px solid var(--panel-border);
+		}
+
+		.foot {
+			margin-top: 16px;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			font-size: 12px;
+			color: var(--text-dim);
+		}
+
+		.foot span#whoami { color: var(--text); }
+
+		.foot a { color: var(--text-dim); text-decoration: none; }
+		.foot a:hover { color: var(--accent-bright); }
+	</style>
+</head>
+<body>
+
+	<div class="card">
+		<img src="icon.svg" alt="">
+		<h1>Three-Quake</h1>
+		<p class="sub">What do you want to do?</p>
+
+		<nav>
+			<a class="primary" href="index.html">Enter the Hub</a>
+			<a href="maps.html">Browse Maps</a>
+			<a href="wiki.html">Wiki</a>
+			<a id="adminLink" href="admin.html" style="display:none;">Admin</a>
+		</nav>
+
+		<hr class="sep">
+
+		<div class="foot">
+			<span>Signed in as <span id="whoami"></span></span>
+			<a href="#" id="logoutLink">log out</a>
+		</div>
+	</div>
+
+	<script type="module">
+
+		import { requireSession, logout } from './src/auth_client.js';
+
+		const session = requireSession();
+		if ( session !== null ) {
+
+			document.getElementById( 'whoami' ).textContent = session.username;
+
+			if ( session.isAdmin ) {
+
+				document.getElementById( 'adminLink' ).style.display = 'block';
+
+			}
+
+		}
+
+		document.getElementById( 'logoutLink' ).addEventListener( 'click', ( e ) => {
+
+			e.preventDefault();
+			logout();
+
+		} );
+
+	</script>
+
+</body>
+</html>
