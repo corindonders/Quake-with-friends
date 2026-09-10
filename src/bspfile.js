@@ -35,6 +35,15 @@ export const MAX_VALUE = 1024;
 export const BSPVERSION = 29;
 export const TOOLVERSION = 2;
 
+// BSP2 -- an unofficial extended-limits format emitted by some modern
+// compilers (ericw-tools, etc.) for maps that exceed vanilla BSP29's 16-bit
+// index limits. Not a "version" in the fileofs 0 int32 sense -- it replaces
+// that field with one of these four-character magics. Widens edges, faces,
+// nodes, leafs, clipnodes and marksurfaces to 32-bit fields; see the
+// SIZEOF_*_BSP2 constants and format branches in gl_model.js.
+export const BSP2VERSION_BSP2 = 0x32505342; // 'BSP2' as little-endian int32
+export const BSP2VERSION_2PSB = 0x42535032; // '2PSB' -- an older/rarer variant, same layout
+
 // Lump types
 export const LUMP_ENTITIES = 0;
 export const LUMP_PLANES = 1;

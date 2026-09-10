@@ -8,6 +8,13 @@ import { COM_LoadFile } from './pak_server.ts';
 // BSP format constants (from bspfile.js)
 const BSPVERSION = 29;
 
+// BSP2 -- extended-limits format some modern compilers emit for maps that
+// exceed vanilla BSP29's 16-bit index limits. Widens leaf/node/clipnode
+// fields to 32-bit; see the bsp2 flag and format branches below. Kept in
+// sync with the same constants in src/bspfile.js and src/gl_model.js.
+const BSP2VERSION_BSP2 = 0x32505342; // 'BSP2' as little-endian int32
+const BSP2VERSION_2PSB = 0x42535032; // '2PSB' -- an older/rarer variant, same layout
+
 // Lump indices
 const LUMP_ENTITIES = 0;
 const LUMP_PLANES = 1;
@@ -163,6 +170,10 @@ const MAX_MOD_KNOWN = 512;
 let loadmodel: model_t | null = null;
 let mod_base: Uint8Array | null = null;
 
+// Set once per Mod_LoadBrushModel call, based on the lump-0 magic; read by
+// the loaders below to pick the BSP29 or BSP2 struct layout.
+let bsp2 = false;
+
 // ============================================================================
 // Model Loading Functions
 // ============================================================================
@@ -247,7 +258,11 @@ export function Mod_LoadModel(mod: model_t, crash: boolean): model_t | null {
 	const view = new DataView(buf);
 	const magic = view.getInt32(0, true);
 
-	if (magic === BSPVERSION) {
+	if (
+		magic === BSPVERSION ||
+		magic === BSP2VERSION_BSP2 ||
+		magic === BSP2VERSION_2PSB
+	) {
 		Mod_LoadBrushModel(mod, buf);
 	} else {
 		// Alias and sprite models not needed on server for collision
@@ -268,7 +283,8 @@ function Mod_LoadBrushModel(mod: model_t, buffer: ArrayBuffer): void {
 	const view = new DataView(buffer);
 
 	const version = view.getInt32(0, true);
-	if (version !== BSPVERSION) {
+	bsp2 = version === BSP2VERSION_BSP2 || version === BSP2VERSION_2PSB;
+	if (version !== BSPVERSION && !bsp2) {
 		Sys_Error('Mod_LoadBrushModel: ' + mod.name + ' has wrong version');
 	}
 
@@ -406,15 +422,19 @@ function Mod_LoadVisibility(
 function Mod_LoadLeafs(mod: model_t, fileofs: number, filelen: number): void {
 	if (!mod_base) return;
 
+	const sizeofLeaf = bsp2 ? 44 : 28; // BSP2 dleaf_t widens mins/maxs/marksurface fields
+	const marksurfOfs = bsp2 ? 32 : 20;
+	const ambientOfs = bsp2 ? 40 : 24;
+
 	const view = new DataView(mod_base.buffer, fileofs, filelen);
-	const count = Math.floor(filelen / 28); // dleaf_t is 28 bytes
+	const count = Math.floor(filelen / sizeofLeaf);
 
 	mod.leafs = [];
 	mod.numleafs = count;
 
 	for (let i = 0; i < count; i++) {
 		const leaf = new mleaf_t();
-		const offset = i * 28;
+		const offset = i * sizeofLeaf;
 
 		leaf.contents = view.getInt32(offset + 0, true);
 
@@ -424,19 +444,31 @@ function Mod_LoadLeafs(mod: model_t, fileofs: number, filelen: number): void {
 		}
 
 		// Bounding box
-		leaf.mins[0] = view.getInt16(offset + 8, true);
-		leaf.mins[1] = view.getInt16(offset + 10, true);
-		leaf.mins[2] = view.getInt16(offset + 12, true);
-		leaf.maxs[0] = view.getInt16(offset + 14, true);
-		leaf.maxs[1] = view.getInt16(offset + 16, true);
-		leaf.maxs[2] = view.getInt16(offset + 18, true);
+		if (bsp2) {
+			leaf.mins[0] = view.getFloat32(offset + 8, true);
+			leaf.mins[1] = view.getFloat32(offset + 12, true);
+			leaf.mins[2] = view.getFloat32(offset + 16, true);
+			leaf.maxs[0] = view.getFloat32(offset + 20, true);
+			leaf.maxs[1] = view.getFloat32(offset + 24, true);
+			leaf.maxs[2] = view.getFloat32(offset + 28, true);
 
-		leaf.firstmarksurface = view.getUint16(offset + 20, true);
-		leaf.nummarksurfaces = view.getUint16(offset + 22, true);
+			leaf.firstmarksurface = view.getUint32(offset + marksurfOfs, true);
+			leaf.nummarksurfaces = view.getUint32(offset + marksurfOfs + 4, true);
+		} else {
+			leaf.mins[0] = view.getInt16(offset + 8, true);
+			leaf.mins[1] = view.getInt16(offset + 10, true);
+			leaf.mins[2] = view.getInt16(offset + 12, true);
+			leaf.maxs[0] = view.getInt16(offset + 14, true);
+			leaf.maxs[1] = view.getInt16(offset + 16, true);
+			leaf.maxs[2] = view.getInt16(offset + 18, true);
+
+			leaf.firstmarksurface = view.getUint16(offset + marksurfOfs, true);
+			leaf.nummarksurfaces = view.getUint16(offset + marksurfOfs + 2, true);
+		}
 
 		// Ambient sound levels
 		for (let j = 0; j < 4; j++) {
-			leaf.ambient_sound_level[j] = mod_base[fileofs + offset + 24 + j];
+			leaf.ambient_sound_level[j] = mod_base[fileofs + offset + ambientOfs + j];
 		}
 
 		mod.leafs.push(leaf);
@@ -449,8 +481,10 @@ function Mod_LoadLeafs(mod: model_t, fileofs: number, filelen: number): void {
 function Mod_LoadNodes(mod: model_t, fileofs: number, filelen: number): void {
 	if (!mod_base) return;
 
+	const sizeofNode = bsp2 ? 44 : 24; // BSP2 dnode_t widens children/mins/maxs/surface fields
+
 	const view = new DataView(mod_base.buffer, fileofs, filelen);
-	const count = Math.floor(filelen / 24); // dnode_t is 24 bytes
+	const count = Math.floor(filelen / sizeofNode);
 
 	mod.nodes = [];
 	mod.numnodes = count;
@@ -463,32 +497,56 @@ function Mod_LoadNodes(mod: model_t, fileofs: number, filelen: number): void {
 	// Second pass: fill in data
 	for (let i = 0; i < count; i++) {
 		const node = mod.nodes[i];
-		const offset = i * 24;
+		const offset = i * sizeofNode;
 
 		const planenum = view.getInt32(offset + 0, true);
 		node.plane = mod.planes[planenum];
 
-		// Children
-		for (let j = 0; j < 2; j++) {
-			const child = view.getInt16(offset + 4 + j * 2, true);
-			if (child >= 0) {
-				node.children[j] = mod.nodes[child];
-			} else {
-				// Negative = leaf index
-				node.children[j] = mod.leafs[~child];
+		if (bsp2) {
+			// Children
+			for (let j = 0; j < 2; j++) {
+				const child = view.getInt32(offset + 4 + j * 4, true);
+				if (child >= 0) {
+					node.children[j] = mod.nodes[child];
+				} else {
+					// Negative = leaf index
+					node.children[j] = mod.leafs[~child];
+				}
 			}
+
+			// Bounding box
+			node.mins[0] = view.getFloat32(offset + 12, true);
+			node.mins[1] = view.getFloat32(offset + 16, true);
+			node.mins[2] = view.getFloat32(offset + 20, true);
+			node.maxs[0] = view.getFloat32(offset + 24, true);
+			node.maxs[1] = view.getFloat32(offset + 28, true);
+			node.maxs[2] = view.getFloat32(offset + 32, true);
+
+			node.firstsurface = view.getUint32(offset + 36, true);
+			node.numsurfaces = view.getUint32(offset + 40, true);
+		} else {
+			// Children
+			for (let j = 0; j < 2; j++) {
+				const child = view.getInt16(offset + 4 + j * 2, true);
+				if (child >= 0) {
+					node.children[j] = mod.nodes[child];
+				} else {
+					// Negative = leaf index
+					node.children[j] = mod.leafs[~child];
+				}
+			}
+
+			// Bounding box
+			node.mins[0] = view.getInt16(offset + 8, true);
+			node.mins[1] = view.getInt16(offset + 10, true);
+			node.mins[2] = view.getInt16(offset + 12, true);
+			node.maxs[0] = view.getInt16(offset + 14, true);
+			node.maxs[1] = view.getInt16(offset + 16, true);
+			node.maxs[2] = view.getInt16(offset + 18, true);
+
+			node.firstsurface = view.getUint16(offset + 20, true);
+			node.numsurfaces = view.getUint16(offset + 22, true);
 		}
-
-		// Bounding box
-		node.mins[0] = view.getInt16(offset + 8, true);
-		node.mins[1] = view.getInt16(offset + 10, true);
-		node.mins[2] = view.getInt16(offset + 12, true);
-		node.maxs[0] = view.getInt16(offset + 14, true);
-		node.maxs[1] = view.getInt16(offset + 16, true);
-		node.maxs[2] = view.getInt16(offset + 18, true);
-
-		node.firstsurface = view.getUint16(offset + 20, true);
-		node.numsurfaces = view.getUint16(offset + 22, true);
 	}
 
 	// Set parent pointers
@@ -524,8 +582,10 @@ function Mod_LoadClipnodes(
 ): void {
 	if (!mod_base) return;
 
+	const sizeofClipnode = bsp2 ? 12 : 8; // BSP2 dclipnode_t widens children to int32
+
 	const view = new DataView(mod_base.buffer, fileofs, filelen);
-	const count = Math.floor(filelen / 8); // dclipnode_t is 8 bytes
+	const count = Math.floor(filelen / sizeofClipnode);
 
 	mod.clipnodes = [];
 	mod.numclipnodes = count;
@@ -558,11 +618,16 @@ function Mod_LoadClipnodes(
 
 	for (let i = 0; i < count; i++) {
 		const clipnode = new mclipnode_t();
-		const offset = i * 8;
+		const offset = i * sizeofClipnode;
 
 		clipnode.planenum = view.getInt32(offset + 0, true);
-		clipnode.children[0] = view.getInt16(offset + 4, true);
-		clipnode.children[1] = view.getInt16(offset + 6, true);
+		if (bsp2) {
+			clipnode.children[0] = view.getInt32(offset + 4, true);
+			clipnode.children[1] = view.getInt32(offset + 8, true);
+		} else {
+			clipnode.children[0] = view.getInt16(offset + 4, true);
+			clipnode.children[1] = view.getInt16(offset + 6, true);
+		}
 
 		mod.clipnodes.push(clipnode);
 	}

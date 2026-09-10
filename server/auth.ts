@@ -200,9 +200,9 @@ export async function revokeSession( token: string ): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // Room tickets: short-lived, HMAC-signed proof that a session was valid at
-// room-join time. Not currently checked by the room processes themselves
-// (see server/README.md security notes) -- reserved for when per-room
-// verification is added.
+// room-join time. Minted by lobby_server.js on join, verified by room
+// processes in net_websocket_server.ts's upgrade handler -- see
+// server/README.md security notes.
 // ---------------------------------------------------------------------------
 
 async function getHmacKey(): Promise<CryptoKey> {

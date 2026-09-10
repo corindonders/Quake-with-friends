@@ -45,6 +45,7 @@ import {
 import {
 	verifySession, verifyPassword, createSession,
 	listUsers, createUser, deleteUser, setUserPassword, setUserAdmin,
+	createRoomTicket,
 } from './auth.ts';
 import { listMaps, getMap, setMap, deleteMap } from './mapdb.ts';
 
@@ -306,7 +307,24 @@ function handleWsConnection( socket, address ) {
 
 			try {
 
-				roomSocket = new WebSocket( 'ws://127.0.0.1:' + room.port + '/ws' );
+				// Proof to the room process that this connection really did pass
+				// the lobby's own auth, not just a direct hit on its loopback
+				// port -- see verifyRoomTicket in net_websocket_server.ts's
+				// upgrade handler. Short-lived (60s), single use in practice
+				// since it's only ever presented once, right here.
+				let roomUrl = 'ws://127.0.0.1:' + room.port + '/ws';
+				try {
+
+					const ticket = await createRoomTicket( session.username, room.id );
+					roomUrl += '?ticket=' + encodeURIComponent( ticket );
+
+				} catch ( ticketError ) {
+
+					Sys_Printf( 'Could not sign a room ticket (%s) -- set THREE_QUAKE_SECRET to enable room-level auth\n', ticketError.message );
+
+				}
+
+				roomSocket = new WebSocket( roomUrl );
 				roomSocket.binaryType = 'arraybuffer';
 
 				await new Promise( ( resolve, reject ) => {
@@ -692,6 +710,14 @@ async function startServer() {
 	Sys_Printf( '========================================\n' );
 	Sys_Printf( 'Three-Quake Lobby Server v2.0 (WebSocket)\n' );
 	Sys_Printf( '========================================\n\n' );
+
+	if ( ! Deno.env.get( 'THREE_QUAKE_SECRET' ) ) {
+
+		Sys_Printf( 'WARNING: THREE_QUAKE_SECRET is not set -- room processes will accept\n' );
+		Sys_Printf( 'any connection on their loopback port without verifying it came\n' );
+		Sys_Printf( 'through this lobby. Set it (see server/README.md) to close that gap.\n' );
+
+	}
 
 	// Configure room manager
 	RoomManager_SetConfig( {

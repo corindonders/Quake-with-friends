@@ -18,7 +18,7 @@ import { GL_MakeAliasModelDisplayLists as GL_MakeAliasModelDisplayLists_mesh } f
 export let solidskytexture = null;
 export let alphaskytexture = null;
 import {
-	BSPVERSION,
+	BSPVERSION, BSP2VERSION_BSP2, BSP2VERSION_2PSB,
 	LUMP_ENTITIES, LUMP_PLANES, LUMP_TEXTURES, LUMP_VERTEXES,
 	LUMP_VISIBILITY, LUMP_NODES, LUMP_TEXINFO, LUMP_FACES,
 	LUMP_LIGHTING, LUMP_CLIPNODES, LUMP_LEAFS, LUMP_MARKSURFACES,
@@ -1186,6 +1186,18 @@ const SIZEOF_TEXINFO = 40;			// float vecs[2][4], int miptex, int flags
 const SIZEOF_DPLANE = 20;			// float normal[3], float dist, int type
 const SIZEOF_DMODEL = 64;			// float mins[3], maxs[3], origin[3], int headnode[4], int visleafs, int firstface, int numfaces
 
+// BSP2 variants of the same structs -- indices/counts widened to 32-bit so
+// maps can exceed vanilla BSP29's 16-bit limits (see bspfile.js).
+const SIZEOF_DEDGE_BSP2 = 8;		// 2 unsigned ints
+const SIZEOF_DFACE_BSP2 = 28;		// int planenum, int side, int firstedge, int numedges, int texinfo, byte styles[4], int lightofs
+const SIZEOF_DNODE_BSP2 = 44;		// int planenum, int children[2], float mins[3], float maxs[3], unsigned int firstface, unsigned int numfaces
+const SIZEOF_DLEAF_BSP2 = 44;		// int contents, int visofs, float mins[3], float maxs[3], unsigned int firstmarksurface, unsigned int nummarksurfaces, byte ambient_level[4]
+const SIZEOF_DCLIPNODE_BSP2 = 12;	// int planenum, int children[2]
+
+// Set once per Mod_LoadBrushModel call, based on the lump-0 magic; read by
+// the loaders below to pick the BSP29 or BSP2 struct layout.
+let bsp2 = false;
+
 // ============================================================================
 // Helper: read a null-terminated string from Uint8Array
 // ============================================================================
@@ -1485,10 +1497,12 @@ function Mod_LoadVertexes( fileofs, filelen ) {
 
 function Mod_LoadEdges( fileofs, filelen ) {
 
-	if ( filelen % SIZEOF_DEDGE )
+	const sizeofEdge = bsp2 ? SIZEOF_DEDGE_BSP2 : SIZEOF_DEDGE;
+
+	if ( filelen % sizeofEdge )
 		Sys_Error( 'MOD_LoadBmodel: funny lump size in ' + loadmodel.name );
 
-	const count = filelen / SIZEOF_DEDGE;
+	const count = filelen / sizeofEdge;
 	const view = new DataView( mod_base.buffer, mod_base.byteOffset + fileofs, filelen );
 	const out = new Array( count + 1 );
 
@@ -1498,9 +1512,19 @@ function Mod_LoadEdges( fileofs, filelen ) {
 	for ( let i = 0; i < count; i ++ ) {
 
 		const e = new medge_t();
-		const base = i * SIZEOF_DEDGE;
-		e.v[ 0 ] = view.getUint16( base, true );
-		e.v[ 1 ] = view.getUint16( base + 2, true );
+		const base = i * sizeofEdge;
+		if ( bsp2 ) {
+
+			e.v[ 0 ] = view.getUint32( base, true );
+			e.v[ 1 ] = view.getUint32( base + 4, true );
+
+		} else {
+
+			e.v[ 0 ] = view.getUint16( base, true );
+			e.v[ 1 ] = view.getUint16( base + 2, true );
+
+		}
+
 		out[ i ] = e;
 
 	}
@@ -1700,10 +1724,14 @@ function CalcSurfaceExtents( s ) {
 
 function Mod_LoadFaces( fileofs, filelen ) {
 
-	if ( filelen % SIZEOF_DFACE )
+	const sizeofFace = bsp2 ? SIZEOF_DFACE_BSP2 : SIZEOF_DFACE;
+	const stylesOfs = bsp2 ? 20 : 12;
+	const lightofsOfs = bsp2 ? 24 : 16;
+
+	if ( filelen % sizeofFace )
 		Sys_Error( 'MOD_LoadBmodel: funny lump size in ' + loadmodel.name );
 
-	const count = filelen / SIZEOF_DFACE;
+	const count = filelen / sizeofFace;
 	const view = new DataView( mod_base.buffer, mod_base.byteOffset + fileofs, filelen );
 	const out = new Array( count );
 
@@ -1713,28 +1741,40 @@ function Mod_LoadFaces( fileofs, filelen ) {
 	for ( let surfnum = 0; surfnum < count; surfnum ++ ) {
 
 		const s = new msurface_t();
-		const base = surfnum * SIZEOF_DFACE;
+		const base = surfnum * sizeofFace;
 
-		s.firstedge = view.getInt32( base + 4, true );
-		s.numedges = view.getInt16( base + 8, true );
+		let planenum, side;
+		if ( bsp2 ) {
+
+			planenum = view.getInt32( base, true );
+			side = view.getInt32( base + 4, true );
+			s.firstedge = view.getInt32( base + 8, true );
+			s.numedges = view.getInt32( base + 12, true );
+			s.texinfo = loadmodel.texinfo[ view.getInt32( base + 16, true ) ];
+
+		} else {
+
+			planenum = view.getUint16( base, true );
+			side = view.getInt16( base + 2, true );
+			s.firstedge = view.getInt32( base + 4, true );
+			s.numedges = view.getInt16( base + 8, true );
+			s.texinfo = loadmodel.texinfo[ view.getInt16( base + 10, true ) ];
+
+		}
+
 		s.flags = 0;
-
-		const planenum = view.getUint16( base, true );
-		const side = view.getInt16( base + 2, true );
 		if ( side )
 			s.flags |= SURF_PLANEBACK;
 
 		s.plane = loadmodel.planes[ planenum ];
 
-		s.texinfo = loadmodel.texinfo[ view.getInt16( base + 10, true ) ];
-
 		CalcSurfaceExtents( s );
 
 		// lighting info
 		for ( let i = 0; i < MAXLIGHTMAPS; i ++ )
-			s.styles[ i ] = mod_base[ fileofs + base + 12 + i ];
+			s.styles[ i ] = mod_base[ fileofs + base + stylesOfs + i ];
 
-		const lightofs = view.getInt32( base + 16, true );
+		const lightofs = view.getInt32( base + lightofsOfs, true );
 		if ( lightofs === - 1 ) {
 
 			s.samples = null;
@@ -1798,10 +1838,12 @@ function Mod_SetParent( node, parent ) {
 
 function Mod_LoadNodes( fileofs, filelen ) {
 
-	if ( filelen % SIZEOF_DNODE )
+	const sizeofNode = bsp2 ? SIZEOF_DNODE_BSP2 : SIZEOF_DNODE;
+
+	if ( filelen % sizeofNode )
 		Sys_Error( 'MOD_LoadBmodel: funny lump size in ' + loadmodel.name );
 
-	const count = filelen / SIZEOF_DNODE;
+	const count = filelen / sizeofNode;
 	const view = new DataView( mod_base.buffer, mod_base.byteOffset + fileofs, filelen );
 	const out = new Array( count );
 
@@ -1811,34 +1853,72 @@ function Mod_LoadNodes( fileofs, filelen ) {
 	for ( let i = 0; i < count; i ++ ) {
 
 		const node = new mnode_t();
-		const base = i * SIZEOF_DNODE;
+		const base = i * sizeofNode;
 
-		for ( let j = 0; j < 3; j ++ ) {
+		if ( bsp2 ) {
 
-			node.minmaxs[ j ] = view.getInt16( base + 8 + j * 2, true );
-			node.minmaxs[ 3 + j ] = view.getInt16( base + 14 + j * 2, true );
+			// mins/maxs[3] as floats, then unsigned int firstface/numfaces
+			for ( let j = 0; j < 3; j ++ ) {
 
-		}
+				node.minmaxs[ j ] = view.getFloat32( base + 12 + j * 4, true );
+				node.minmaxs[ 3 + j ] = view.getFloat32( base + 24 + j * 4, true );
 
-		const p = view.getInt32( base, true );
-		node.plane = loadmodel.planes[ p ];
+			}
 
-		node.firstsurface = view.getUint16( base + 20, true );
-		node.numsurfaces = view.getUint16( base + 22, true );
+			const p = view.getInt32( base, true );
+			node.plane = loadmodel.planes[ p ];
 
-		for ( let j = 0; j < 2; j ++ ) {
+			node.firstsurface = view.getUint32( base + 36, true );
+			node.numsurfaces = view.getUint32( base + 40, true );
 
-			const child = view.getInt16( base + 4 + j * 2, true );
-			if ( child >= 0 ) {
+			for ( let j = 0; j < 2; j ++ ) {
 
-				node.children[ j ] = null; // will be resolved after all nodes created
-				node._childIndex = node._childIndex || [];
-				node._childIndex[ j ] = { type: 'node', index: child };
+				const child = view.getInt32( base + 4 + j * 4, true );
+				if ( child >= 0 ) {
 
-			} else {
+					node.children[ j ] = null; // will be resolved after all nodes created
+					node._childIndex = node._childIndex || [];
+					node._childIndex[ j ] = { type: 'node', index: child };
 
-				node._childIndex = node._childIndex || [];
-				node._childIndex[ j ] = { type: 'leaf', index: - 1 - child };
+				} else {
+
+					node._childIndex = node._childIndex || [];
+					node._childIndex[ j ] = { type: 'leaf', index: - 1 - child };
+
+				}
+
+			}
+
+		} else {
+
+			for ( let j = 0; j < 3; j ++ ) {
+
+				node.minmaxs[ j ] = view.getInt16( base + 8 + j * 2, true );
+				node.minmaxs[ 3 + j ] = view.getInt16( base + 14 + j * 2, true );
+
+			}
+
+			const p = view.getInt32( base, true );
+			node.plane = loadmodel.planes[ p ];
+
+			node.firstsurface = view.getUint16( base + 20, true );
+			node.numsurfaces = view.getUint16( base + 22, true );
+
+			for ( let j = 0; j < 2; j ++ ) {
+
+				const child = view.getInt16( base + 4 + j * 2, true );
+				if ( child >= 0 ) {
+
+					node.children[ j ] = null; // will be resolved after all nodes created
+					node._childIndex = node._childIndex || [];
+					node._childIndex[ j ] = { type: 'node', index: child };
+
+				} else {
+
+					node._childIndex = node._childIndex || [];
+					node._childIndex[ j ] = { type: 'leaf', index: - 1 - child };
+
+				}
 
 			}
 
@@ -1881,10 +1961,14 @@ function Mod_LoadNodes( fileofs, filelen ) {
 
 function Mod_LoadLeafs( fileofs, filelen ) {
 
-	if ( filelen % SIZEOF_DLEAF )
+	const sizeofLeaf = bsp2 ? SIZEOF_DLEAF_BSP2 : SIZEOF_DLEAF;
+	const marksurfOfs = bsp2 ? 32 : 20;
+	const ambientOfs = bsp2 ? 40 : 24;
+
+	if ( filelen % sizeofLeaf )
 		Sys_Error( 'MOD_LoadBmodel: funny lump size in ' + loadmodel.name );
 
-	const count = filelen / SIZEOF_DLEAF;
+	const count = filelen / sizeofLeaf;
 	const view = new DataView( mod_base.buffer, mod_base.byteOffset + fileofs, filelen );
 	const out = new Array( count );
 
@@ -1895,19 +1979,32 @@ function Mod_LoadLeafs( fileofs, filelen ) {
 
 		const leaf = new mleaf_t();
 		leaf._leafIndex = i; // store index for PVS checks (C uses pointer arithmetic: leaf - sv.worldmodel->leafs)
-		const base = i * SIZEOF_DLEAF;
+		const base = i * sizeofLeaf;
 
-		for ( let j = 0; j < 3; j ++ ) {
+		if ( bsp2 ) {
 
-			leaf.minmaxs[ j ] = view.getInt16( base + 8 + j * 2, true );
-			leaf.minmaxs[ 3 + j ] = view.getInt16( base + 14 + j * 2, true );
+			for ( let j = 0; j < 3; j ++ ) {
+
+				leaf.minmaxs[ j ] = view.getFloat32( base + 8 + j * 4, true );
+				leaf.minmaxs[ 3 + j ] = view.getFloat32( base + 20 + j * 4, true );
+
+			}
+
+		} else {
+
+			for ( let j = 0; j < 3; j ++ ) {
+
+				leaf.minmaxs[ j ] = view.getInt16( base + 8 + j * 2, true );
+				leaf.minmaxs[ 3 + j ] = view.getInt16( base + 14 + j * 2, true );
+
+			}
 
 		}
 
 		leaf.contents = view.getInt32( base, true );
 
-		const firstmarksurfaceIdx = view.getUint16( base + 20, true );
-		leaf.nummarksurfaces = view.getUint16( base + 22, true );
+		const firstmarksurfaceIdx = bsp2 ? view.getUint32( base + marksurfOfs, true ) : view.getUint16( base + marksurfOfs, true );
+		leaf.nummarksurfaces = bsp2 ? view.getUint32( base + marksurfOfs + 4, true ) : view.getUint16( base + marksurfOfs + 2, true );
 
 		// In C: leaf->firstmarksurface = loadmodel->marksurfaces + firstmarksurface;
 		// This is a pointer into the marksurfaces array (which is an array of msurface_t*)
@@ -1931,7 +2028,7 @@ function Mod_LoadLeafs( fileofs, filelen ) {
 		leaf.efrags = null;
 
 		for ( let j = 0; j < 4; j ++ )
-			leaf.ambient_sound_level[ j ] = mod_base[ fileofs + base + 24 + j ];
+			leaf.ambient_sound_level[ j ] = mod_base[ fileofs + base + ambientOfs + j ];
 
 		// gl underwater warp
 		if ( leaf.contents !== CONTENTS_EMPTY ) {
@@ -1956,10 +2053,12 @@ function Mod_LoadLeafs( fileofs, filelen ) {
 
 function Mod_LoadClipnodes( fileofs, filelen ) {
 
-	if ( filelen % SIZEOF_DCLIPNODE )
+	const sizeofClipnode = bsp2 ? SIZEOF_DCLIPNODE_BSP2 : SIZEOF_DCLIPNODE;
+
+	if ( filelen % sizeofClipnode )
 		Sys_Error( 'MOD_LoadBmodel: funny lump size in ' + loadmodel.name );
 
-	const count = filelen / SIZEOF_DCLIPNODE;
+	const count = filelen / sizeofClipnode;
 	const view = new DataView( mod_base.buffer, mod_base.byteOffset + fileofs, filelen );
 	const out = new Array( count );
 
@@ -1995,11 +2094,20 @@ function Mod_LoadClipnodes( fileofs, filelen ) {
 	for ( let i = 0; i < count; i ++ ) {
 
 		const cn = new dclipnode_t();
-		const base = i * SIZEOF_DCLIPNODE;
+		const base = i * sizeofClipnode;
 
 		cn.planenum = view.getInt32( base, true );
-		cn.children[ 0 ] = view.getInt16( base + 4, true );
-		cn.children[ 1 ] = view.getInt16( base + 6, true );
+		if ( bsp2 ) {
+
+			cn.children[ 0 ] = view.getInt32( base + 4, true );
+			cn.children[ 1 ] = view.getInt32( base + 8, true );
+
+		} else {
+
+			cn.children[ 0 ] = view.getInt16( base + 4, true );
+			cn.children[ 1 ] = view.getInt16( base + 6, true );
+
+		}
 
 		out[ i ] = cn;
 
@@ -2055,10 +2163,12 @@ function Mod_MakeHull0() {
 
 function Mod_LoadMarksurfaces( fileofs, filelen ) {
 
-	if ( filelen % 2 )
+	const sizeofMarksurf = bsp2 ? 4 : 2;
+
+	if ( filelen % sizeofMarksurf )
 		Sys_Error( 'MOD_LoadBmodel: funny lump size in ' + loadmodel.name );
 
-	const count = filelen / 2;
+	const count = filelen / sizeofMarksurf;
 	const view = new DataView( mod_base.buffer, mod_base.byteOffset + fileofs, filelen );
 	const out = new Array( count );
 
@@ -2067,7 +2177,7 @@ function Mod_LoadMarksurfaces( fileofs, filelen ) {
 
 	for ( let i = 0; i < count; i ++ ) {
 
-		const j = view.getUint16( i * 2, true );
+		const j = bsp2 ? view.getUint32( i * 4, true ) : view.getUint16( i * 2, true );
 		if ( j >= loadmodel.numsurfaces )
 			Sys_Error( 'Mod_ParseMarksurfaces: bad surface number' );
 		out[ i ] = loadmodel.surfaces[ j ];
@@ -2146,7 +2256,8 @@ function Mod_LoadBrushModel( mod, buffer ) {
 	const view = new DataView( buffer );
 
 	const version = view.getInt32( 0, true );
-	if ( version !== BSPVERSION )
+	bsp2 = ( version === BSP2VERSION_BSP2 || version === BSP2VERSION_2PSB );
+	if ( version !== BSPVERSION && ! bsp2 )
 		Sys_Error( 'Mod_LoadBrushModel: ' + mod.name + ' has wrong version number (' + version + ' should be ' + BSPVERSION + ')' );
 
 	// swap all the lumps

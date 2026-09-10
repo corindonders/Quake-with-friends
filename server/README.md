@@ -139,12 +139,16 @@ picked — mod dirs are passed straight through to the room process the
 same way `?mod=` works for the browser client (`COM_LoadMod`, now
 Deno-side too, in `server/game_server.js`).
 
-**Security note:** the token gate is enforced at the lobby only. The room
-processes themselves don't yet re-verify who's connecting — reasonable
-since they're loopback-only and unreachable except via the lobby's relay,
-but worth knowing. `auth.ts` already has `createRoomTicket`/
-`verifyRoomTicket` (HMAC via `THREE_QUAKE_SECRET`) ready for wiring into
-the relay handshake if you want to harden that further.
+**Security note:** when `THREE_QUAKE_SECRET` is set, room processes verify a
+short-lived ticket (`auth.ts`'s `createRoomTicket`/`verifyRoomTicket`, HMAC-
+signed) that the lobby mints for the joining player and passes as `?ticket=`
+on the loopback relay connection — closing the gap where anything else on
+the same machine could otherwise open a raw WebSocket straight to a room's
+port and be treated as a legitimate player. Without the secret set, room
+processes fall back to trusting any connection (a startup warning says so),
+same as before this existed — set the `THREE_QUAKE_SECRET` env var (see the
+`export THREE_QUAKE_SECRET=...` line above) for any deployment where the
+server machine isn't fully trusted.
 
 ## Legacy prototype (`main.ts` / `host_server.ts`)
 

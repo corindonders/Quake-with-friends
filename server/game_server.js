@@ -149,6 +149,7 @@ async function Host_Init_Server() {
 	Sys_Printf('Configuring network...\n');
 	WS_SetConfig({
 		port: CONFIG.port,
+		roomId: CONFIG.roomId,
 	});
 
 	// Initialize base networking (sets up loopback driver 0)

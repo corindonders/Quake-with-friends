@@ -177,6 +177,7 @@ export async function RoomManager_CreateRoom( config: {
 			'--allow-net',
 			'--allow-read',
 			'--allow-write', // player_progress.ts's Deno KV store (server/data/progress.db)
+			'--allow-env=THREE_QUAKE_SECRET', // verifying the lobby's room-join tickets, see net_websocket_server.ts
 			'--unstable-kv',
 			'--config', denoJsonPath,
 			gameServerPath,

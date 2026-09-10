@@ -80,6 +80,23 @@ export let renderer = null; // THREE.WebGLRenderer
 export let canvas = null; // HTMLCanvasElement
 
 //============================================================================
+// VID_GetPixelRatio
+//
+// The devicePixelRatio actually used for the WebGL backing buffer, capped
+// at 2 -- beyond that the pixel-count cost (up to 9x at 3x DPR) buys
+// essentially invisible sharpness for this engine's resolution. Anything
+// that sizes a canvas to line up with the WebGL canvas (the 2D HUD overlay
+// in gl_draw.js) must use this instead of raw window.devicePixelRatio, or
+// the two canvases drift out of sync on a >2x-DPR display.
+//============================================================================
+
+export function VID_GetPixelRatio() {
+
+	return Math.min( window.devicePixelRatio || 1, 2 );
+
+}
+
+//============================================================================
 // VID_SetPalette
 //
 // Called at startup and after any gamma correction.
@@ -191,7 +208,7 @@ export function VID_Init( palette ) {
 	} );
 
 	renderer.setSize( canvas.width, canvas.height );
-	renderer.setPixelRatio( window.devicePixelRatio );
+	renderer.setPixelRatio( VID_GetPixelRatio() );
 	renderer.outputColorSpace = THREE.SRGBColorSpace;
 	renderer.autoClear = false; // we manage clearing ourselves, like Quake did
 	renderer.sortObjects = false; // we sort manually via BSP front-to-back

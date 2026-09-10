@@ -4,7 +4,7 @@
 import { Con_Printf } from './console.js';
 import { Sbar_Changed } from './sbar.js';
 import { W_GetLumpName } from './wad.js';
-import { d_8to24table as vid_d_8to24table } from './vid.js';
+import { d_8to24table as vid_d_8to24table, VID_GetPixelRatio } from './vid.js';
 import { COM_FindFile } from './pak.js';
 import { Cmd_AddCommand, Cmd_Argc, Cmd_Argv } from './cmd.js';
 
@@ -96,7 +96,7 @@ of OS DPI settings. Also ensures the overlay canvas is crisp on HiDPI.
 */
 function _calculateUIScale() {
 
-	const dpr = window.devicePixelRatio || 1;
+	const dpr = VID_GetPixelRatio();
 	const physicalWidth = Math.floor( _realVid.width * dpr );
 	const physicalHeight = Math.floor( _realVid.height * dpr );
 
@@ -129,7 +129,7 @@ Minimum: 200, Maximum: physical screen height.
 */
 export function SCR_SetConHeight( height ) {
 
-	const dpr = window.devicePixelRatio || 1;
+	const dpr = VID_GetPixelRatio();
 	const physicalHeight = Math.floor( _realVid.height * dpr );
 
 	// Clamp to reasonable range
@@ -421,7 +421,7 @@ export function Draw_Init( canvas ) {
 
 		// Create an overlay canvas positioned on top of the WebGL canvas
 		// Size to physical pixels (CSS * dpr) for crisp HiDPI rendering
-		const dpr = window.devicePixelRatio || 1;
+		const dpr = VID_GetPixelRatio();
 		overlayCanvas = document.createElement( 'canvas' );
 		overlayCanvas.width = Math.floor( ( _realVid.width || 640 ) * dpr );
 		overlayCanvas.height = Math.floor( ( _realVid.height || 480 ) * dpr );
@@ -432,7 +432,7 @@ export function Draw_Init( canvas ) {
 		// Resize overlay when window resizes (use physical pixels)
 		window.addEventListener( 'resize', function () {
 
-			const dpr = window.devicePixelRatio || 1;
+			const dpr = VID_GetPixelRatio();
 			overlayCanvas.width = Math.floor( _realVid.width * dpr );
 			overlayCanvas.height = Math.floor( _realVid.height * dpr );
 			// Scale is applied per-frame in Draw_BeginFrame

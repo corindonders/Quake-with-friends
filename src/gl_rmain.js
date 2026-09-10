@@ -24,6 +24,7 @@ import {
 	R_DrawParticles as R_DrawParticles_impl
 } from './r_part.js';
 import { isXRActive, getXRRig, XR_SetCamera, XR_SCALE, XR_GetControllerWorldPose } from './webxr.js';
+import { R_ExtractWorldspawnSky, R_SetSky } from './gl_skybox.js';
 import {
 	cl, cl_visedicts, cl_numvisedicts, cl_dlights, cl_entities,
 	cl_static_entities, cl_temp_entities, cl_lightstyle
@@ -1293,7 +1294,17 @@ export function R_RenderView() {
 	if ( r_speeds.value ) {
 
 		time2 = Sys_FloatTime();
-		Con_Printf( ( ( ( time2 - time1 ) * 1000 ) | 0 ) + ' ms  ' + c_brush_polys + ' wpoly ' + c_alias_polys + ' epoly' );
+		let msg = ( ( ( time2 - time1 ) * 1000 ) | 0 ) + ' ms  ' + c_brush_polys + ' wpoly ' + c_alias_polys + ' epoly';
+
+		if ( renderer ) {
+
+			const info = renderer.info;
+			msg += '  ' + info.render.calls + ' calls ' + info.render.triangles + ' tris '
+				+ info.memory.geometries + ' geo ' + info.memory.textures + ' tex';
+
+		}
+
+		Con_Printf( msg );
 
 	}
 
@@ -1378,6 +1389,12 @@ export function R_NewMap() {
 
 	}
 	r_worldentity.model = cl != null ? cl.worldmodel : null;
+
+	// Modern maps can specify a TGA cubemap skybox via a worldspawn "sky"/
+	// "_sky" key -- QuakeC never sees it, so read it straight off the raw
+	// entity lump text. Empty string if the map doesn't set one, which
+	// clears any previous map's skybox.
+	R_SetSky( R_ExtractWorldspawnSky( r_worldentity.model ? r_worldentity.model.entities : null ), scene );
 
 	// reset framecount
 	set_r_framecount( 1 );

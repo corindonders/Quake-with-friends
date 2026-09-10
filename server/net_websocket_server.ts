@@ -16,6 +16,7 @@
 import { Sys_Printf } from './sys_server.ts';
 import { net_message } from '../src/net.js';
 import { SZ_Clear, SZ_Write } from '../src/common.js';
+import { verifyRoomTicket } from './auth.ts';
 
 export interface ClientConnection {
 	id: number;
@@ -60,6 +61,7 @@ export function WS_SetMapCallbacks(
 export function WS_SetMaxClientsCallback( _setMaxClients: ( maxClients: number ) => void ): void {}
 
 let serverPort = 4433;
+let serverRoomId: string | null = null;
 
 let _NET_NewQSocket: ( () => QSocket | null ) | null = null;
 let _NET_FreeQSocket: ( ( sock: QSocket ) => void ) | null = null;
@@ -72,8 +74,9 @@ export function WS_SetSocketFreer( freer: ( sock: QSocket ) => void ): void {
 	_NET_FreeQSocket = freer;
 }
 
-export function WS_SetConfig( config: { port?: number } ): void {
+export function WS_SetConfig( config: { port?: number; roomId?: string } ): void {
 	if ( config.port != null ) serverPort = config.port;
+	if ( config.roomId != null ) serverRoomId = config.roomId;
 }
 
 let net_driverlevel = 0;
@@ -115,10 +118,31 @@ export async function WS_Listen( state: boolean ): Promise<void> {
 
 	httpServer = Deno.serve(
 		{ hostname: '127.0.0.1', port: serverPort, onListen: () => {} },
-		( req ) => {
+		async ( req ) => {
 
 			if ( req.headers.get( 'upgrade' ) !== 'websocket' ) {
 				return new Response( 'Three-Quake room process\n', { status: 200 } );
+			}
+
+			// Loopback-only doesn't mean "safe" -- anything else on the same
+			// machine (or in the same container) could still hit this port
+			// directly. When THREE_QUAKE_SECRET is configured, require the
+			// short-lived ticket the lobby signs at join time (see
+			// createRoomTicket in lobby_server.js) and reject anything else.
+			// Left open (with a warning) when no secret is configured, so an
+			// unconfigured deployment doesn't silently lock every player out.
+			if ( Deno.env.get( 'THREE_QUAKE_SECRET' ) ) {
+
+				const ticket = new URL( req.url ).searchParams.get( 'ticket' );
+				const claim = ticket != null ? await verifyRoomTicket( ticket ) : null;
+
+				if ( claim === null || ( serverRoomId != null && claim.roomId !== serverRoomId ) ) {
+
+					Sys_Printf( 'Rejected unauthenticated connection (missing/invalid/mismatched room ticket)\n' );
+					return new Response( 'Unauthorized\n', { status: 401 } );
+
+				}
+
 			}
 
 			const { socket, response } = Deno.upgradeWebSocket( req );

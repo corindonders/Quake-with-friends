@@ -60,6 +60,7 @@ import {
 } from './mathlib.js';
 import { Mod_LeafPVS, solidskytexture, alphaskytexture } from './gl_model.js';
 import { realtime } from './host.js';
+import { R_SkyboxActive } from './gl_skybox.js';
 
 //============================================================================
 // Constants
@@ -255,9 +256,23 @@ function _getWaterMaterial( t, opacity ) {
 	let material = _waterMaterialCache.get( cacheKey );
 	if ( ! material ) {
 
-		material = new THREE.MeshBasicMaterial( {
-			map: ( t && t.gl_texture ) ? t.gl_texture : null,
-			color: ( t && t.gl_texture ) ? 0xffffff : 0x406080,
+		// Lambert (not Basic) so water responds to dynamic lights the same
+		// way world/brush surfaces already do -- a rocket exploding over a
+		// pool should light it up, not leave it flat and unlit. Unlike
+		// world geometry, water has no baked lightmap and the scene has no
+		// ambient light (everything here relies on lightmaps + dlights) --
+		// a plain Lambert material would go pitch black anywhere without a
+		// dlight nearby, which is worse than before. Using the same texture
+		// as an emissive base keeps water visible everywhere like it always
+		// was, while the Lambert diffuse term still adds extra brightening
+		// from nearby dlights on top of that.
+		const waterTexture = ( t && t.gl_texture ) ? t.gl_texture : null;
+		material = new THREE.MeshLambertMaterial( {
+			map: waterTexture,
+			color: waterTexture ? 0xffffff : 0x406080,
+			emissiveMap: waterTexture,
+			emissive: waterTexture ? 0xffffff : 0x406080,
+			emissiveIntensity: 0.7,
 			transparent: true,
 			opacity: opacity,
 			side: THREE.DoubleSide
@@ -284,6 +299,14 @@ function _getWaterMesh( s, geometry, material, renderGroup ) {
 	if ( ! mesh ) {
 
 		mesh = new THREE.Mesh( geometry, material );
+		// Water doesn't cast a shadow (it's translucent and shadow maps
+		// don't understand that), but it should still show shadows cast
+		// onto it from above.
+		mesh.receiveShadow = true;
+		// Our own BSP walk already frustum-culls surfaces before a mesh for
+		// them is ever emitted -- Three's per-mesh bounding-sphere test would
+		// just redo that work every frame.
+		mesh.frustumCulled = false;
 		s._waterMesh = mesh;
 
 	} else {
@@ -1501,6 +1524,10 @@ export function R_DrawBrushModel( e ) {
 				}
 
 				const mesh = new THREE.Mesh( geom, material );
+				// Our own BSP walk already frustum-culls surfaces before a
+				// group like this is built -- Three's per-mesh bounding-sphere
+				// test would just redo that work every frame.
+				mesh.frustumCulled = false;
 				// Only lit (lightmapped) surfaces are worth shadowing -- unlit ones
 				// (sky, no-lightmap fallback) wouldn't show a shadow anyway.
 				if ( material.isMeshLambertMaterial ) {
@@ -2122,6 +2149,10 @@ function R_DrawSkyChain( s ) {
 
 	if ( ! worldGroup ) return;
 
+	// A cubemap skybox (scene.background) is active for this map -- let it
+	// show through instead of drawing the classic scrolling-cloud sky.
+	if ( R_SkyboxActive() ) return;
+
 	// Create or update sky materials from the sky textures
 	if ( solidskytexture && ! solidSkyMaterial ) {
 
@@ -2169,6 +2200,7 @@ function R_DrawSkyChain( s ) {
 			if ( ! mesh ) {
 
 				mesh = new THREE.Mesh( geometry, solidSkyMaterial );
+				mesh.frustumCulled = false;
 				fa._skyMesh = mesh;
 
 			} else {
@@ -2209,6 +2241,7 @@ function R_DrawSkyChain( s ) {
 				if ( ! mesh ) {
 
 					mesh = new THREE.Mesh( geometry, alphaSkyMaterial );
+					mesh.frustumCulled = false;
 					fa._skyMesh2 = mesh;
 
 				} else {
