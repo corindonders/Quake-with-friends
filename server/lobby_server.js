@@ -170,9 +170,27 @@ async function resolveRoomForJoin( rawRoomId ) {
 	const roomId = ( rawRoomId || '' ).trim().toUpperCase();
 	let room = RoomManager_GetRoom( roomId );
 
+	// The hub can go missing if its process ever got reaped as unhealthy
+	// (see RoomManager_CleanupUnhealthyRooms, which now recreates it itself,
+	// but a join landing in the gap before that finishes needs the same
+	// fallback) -- it needs its real map/mod/persistent config, not the
+	// generic shared-link fallback below.
+	if ( room === null && roomId === HUB_ROOM_ID ) {
+
+		Sys_Printf( 'Hub room missing on join -- recreating\n' );
+		await RoomManager_CreateRoom( {
+			map: 'start',
+			mod: 'mods/copper',
+			maxPlayers: 16,
+			hostName: 'Hub',
+			specificId: HUB_ROOM_ID,
+			persistent: true,
+		} );
+		room = RoomManager_GetRoom( HUB_ROOM_ID );
+
 	// A valid-looking room ID that doesn't exist (e.g. an expired shared
 	// link) gets a fresh default room rather than a dead end.
-	if ( room === null && ROOM_ID_PATTERN.test( roomId ) ) {
+	} else if ( room === null && ROOM_ID_PATTERN.test( roomId ) ) {
 
 		Sys_Printf( 'Auto-creating room for link ID: %s\n', roomId );
 		await RoomManager_CreateRoom( {

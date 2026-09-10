@@ -442,6 +442,12 @@ export function RoomManager_ListRooms(): Array<{
  * Clean up unhealthy rooms (event loop freeze / no watchdog output).
  * Room servers emit watchdog lines every 5s. If we stop receiving watchdog
  * ticks for too long after startup, the process is considered wedged.
+ *
+ * A persistent room (the hub) is still killed if it wedges -- a frozen
+ * process is useless whether or not it's exempt from idle cleanup -- but
+ * it's immediately recreated with the same config so there's always
+ * somewhere for players to land, instead of leaving a gap that the lobby's
+ * generic "room missing" fallback would fill with the wrong map/mod.
  */
 export function RoomManager_CleanupUnhealthyRooms(): number {
 	const now = Date.now();
@@ -460,8 +466,27 @@ export function RoomManager_CleanupUnhealthyRooms(): number {
 				id,
 				Math.floor( watchdogGapMs / 1000 )
 			);
+
+			const recreateConfig = room.persistent ? {
+				map: room.map,
+				mod: room.mod,
+				maxPlayers: room.maxPlayers,
+				hostName: room.hostName,
+				specificId: room.id,
+				persistent: true,
+			} : null;
+
 			RoomManager_TerminateRoom( id );
 			cleaned++;
+
+			if ( recreateConfig !== null ) {
+				Sys_Printf( 'Room %s is persistent -- recreating\n', id );
+				RoomManager_CreateRoom( recreateConfig ).then( ( result ) => {
+					if ( result === null ) {
+						Sys_Printf( 'Failed to recreate persistent room %s\n', id );
+					}
+				} );
+			}
 		}
 	}
 
