@@ -477,6 +477,7 @@ export function CL_AllocDlight( key ) {
 				dl.die = 0;
 				dl.decay = 0;
 				dl.minlight = 0;
+				dl.color[ 0 ] = dl.color[ 1 ] = dl.color[ 2 ] = 1;
 				dl.key = key;
 				return dl;
 
@@ -497,6 +498,7 @@ export function CL_AllocDlight( key ) {
 			dl.die = 0;
 			dl.decay = 0;
 			dl.minlight = 0;
+			dl.color[ 0 ] = dl.color[ 1 ] = dl.color[ 2 ] = 1;
 			dl.key = key;
 			return dl;
 
@@ -510,6 +512,7 @@ export function CL_AllocDlight( key ) {
 	dl.die = 0;
 	dl.decay = 0;
 	dl.minlight = 0;
+	dl.color[ 0 ] = dl.color[ 1 ] = dl.color[ 2 ] = 1;
 	dl.key = key;
 	return dl;
 
@@ -817,6 +820,7 @@ function CL_LinkPacketEntities( frac ) {
 					VectorCopy( ent.origin, dl.origin );
 					dl.radius = 200;
 					dl.die = cl.time + 0.01;
+					dl.color[ 0 ] = 1; dl.color[ 1 ] = 0.6; dl.color[ 2 ] = 0.2; // orange, matches the explosion it'll leave behind
 
 				} else if ( model.flags & 0x02 ) { // EF_GRENADE
 
@@ -1121,6 +1125,7 @@ export function CL_RelinkEntities() {
 				VectorCopy( ent.origin, dl.origin );
 				dl.radius = 200;
 				dl.die = cl.time + 0.01;
+				dl.color[ 0 ] = 1; dl.color[ 1 ] = 0.6; dl.color[ 2 ] = 0.2; // orange, matches the explosion it'll leave behind
 
 			} else if ( ent.model.flags & 0x02 ) // EF_GRENADE
 				R_RocketTrail( _relinkOldorg, ent.origin, 1 );

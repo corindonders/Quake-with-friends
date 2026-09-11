@@ -25,6 +25,8 @@ import {
 } from './r_part.js';
 import { isXRActive, getXRRig, XR_SetCamera, XR_SCALE, XR_GetControllerWorldPose } from './webxr.js';
 import { R_ExtractWorldspawnSky, R_SetSky } from './gl_skybox.js';
+import { R_ExtractWorldspawnFog, R_SetMapFog } from './gl_fog.js';
+import { PostFX_Render } from './gl_postprocess.js';
 import {
 	cl, cl_visedicts, cl_numvisedicts, cl_dlights, cl_entities,
 	cl_static_entities, cl_temp_entities, cl_lightstyle
@@ -33,7 +35,7 @@ import { d_lightstylevalue, r_framecount, set_r_framecount, inc_r_framecount,
 	v_blend, mirrortexturenum, set_mirrortexturenum,
 	r_norefresh, r_drawentities, r_drawviewmodel, r_speeds,
 	r_fullbright, r_lightmap, r_shadows, r_mirroralpha,
-	r_wateralpha, r_dynamic, r_novis, r_drawworld, r_waterwarp,
+	r_wateralpha, r_dynamic, r_novis, r_drawworld, r_waterwarp, r_antialias,
 	gl_clear, gl_cull, gl_texsort, gl_smoothmodels, gl_affinemodels,
 	gl_polyblend, gl_flashblend, gl_playermip, gl_nocolors,
 	gl_keeptjunctions, gl_reporttjunctions,
@@ -1274,10 +1276,13 @@ export function R_RenderView() {
 	// render mirror view
 	R_Mirror();
 
-	// Present the frame via Three.js
+	// Present the frame via Three.js. FXAA (r_antialias) doesn't support
+	// WebXR's stereo rendering, so fall straight back to a plain render
+	// there -- same as R_PolyBlend's ortho overlay a few lines down.
 	if ( renderer && scene && camera ) {
 
-		renderer.render( scene, camera );
+		const useAA = r_antialias.value !== 0 && isXRActive() === false;
+		PostFX_Render( renderer, scene, camera, useAA );
 
 	}
 
@@ -1396,6 +1401,13 @@ export function R_NewMap() {
 	// entity lump text. Empty string if the map doesn't set one, which
 	// clears any previous map's skybox.
 	R_SetSky( R_ExtractWorldspawnSky( r_worldentity.model ? r_worldentity.model.entities : null ), scene );
+
+	// Same idea for a worldspawn "fog"/"_fog" key ("density red green blue")
+	// -- vanilla QuakeC has no such field either. Mods with their own fog
+	// logic (e.g. Copper) override this at runtime via the "fog" console
+	// command (stuffed to the client on spawn/trigger), which gl_fog.js also
+	// implements -- this just gives maps fog even with no mod loaded at all.
+	R_SetMapFog( R_ExtractWorldspawnFog( r_worldentity.model ? r_worldentity.model.entities : null ), scene );
 
 	// reset framecount
 	set_r_framecount( 1 );

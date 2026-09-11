@@ -115,7 +115,15 @@ function Host_Map_f() {
 	if ( COM_FindFile( filename ) === null ) {
 
 		Con_Printf( 'Fetching %s...\n', filename );
-		COM_EnsureFile( filename ).then( ( success ) => {
+
+		// Optional colored-lighting companion (see Mod_LoadLighting in
+		// gl_model.js) -- most maps don't have one, so its failure is fine;
+		// fetched alongside the .bsp so it's already cached by the time
+		// Mod_LoadBrushModel reads it synchronously.
+		Promise.all( [
+			COM_EnsureFile( filename ),
+			COM_EnsureFile( filename.slice( 0, - 4 ) + '.lit' ),
+		] ).then( ( [ success ] ) => {
 
 			if ( success ) {
 
@@ -196,7 +204,10 @@ function Host_Changelevel_f() {
 	if ( COM_FindFile( filename ) === null ) {
 
 		Con_Printf( 'Fetching %s...\n', filename );
-		COM_EnsureFile( filename ).then( ( success ) => {
+		Promise.all( [
+			COM_EnsureFile( filename ),
+			COM_EnsureFile( filename.slice( 0, - 4 ) + '.lit' ),
+		] ).then( ( [ success ] ) => {
 
 			if ( success ) {
 
@@ -1262,7 +1273,10 @@ function Host_Loadgame_f() {
 	if ( COM_FindFile( mapfilename ) === null ) {
 
 		Con_Printf( 'Fetching %s...\n', mapfilename );
-		COM_EnsureFile( mapfilename ).then( ( success ) => {
+		Promise.all( [
+			COM_EnsureFile( mapfilename ),
+			COM_EnsureFile( mapfilename.slice( 0, - 4 ) + '.lit' ),
+		] ).then( ( [ success ] ) => {
 
 			if ( success ) {
 

@@ -867,7 +867,11 @@ function PF_Find() {
 	const f = G_INT( OFS_PARM1 );
 	const s = G_STRING( OFS_PARM2 );
 
-	if ( ! s )
+	// C's `!s` here means "s is a NULL pointer" (a corrupt string offset), not
+	// "s is empty" -- an empty search string (e.g. find(world, target, "")) is
+	// a legitimate, common call (Quoth's plats.qc does this) that should just
+	// search for entities whose field is also empty, not crash the server.
+	if ( s === null )
 		PR_RunError( 'PF_Find: bad search string' );
 
 	for ( e ++; e < sv.num_edicts; e ++ ) {
@@ -876,7 +880,10 @@ function PF_Find() {
 		if ( ed.free )
 			continue;
 		const t = E_STRING( ed, f );
-		if ( ! t )
+		// Same NULL-vs-empty distinction as above: an entity whose field is a
+		// legitimate empty string (t === '') must still be comparable against
+		// an empty search string, not skipped.
+		if ( t === null )
 			continue;
 		if ( t === s ) {
 

@@ -140,7 +140,7 @@ async function main() {
 
 		}
 
-		TravelUI_Init();
+		TravelUI_Init( modDirs );
 
 		// Preload custom menu images
 		try {

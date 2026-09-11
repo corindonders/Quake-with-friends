@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Quake with Friends — Admin — Users</title>
+	<link rel="icon" type="image/svg+xml" href="icon.svg">
+	<link rel="apple-touch-icon" href="icon.png">
+	<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+	<header>
+		<img src="icon.svg" alt="">
+		<h1><a href="admin.html">Admin</a></h1>
+		<nav>
+			<a href="admin_users.html" class="active">Users</a>
+			<a href="admin_maps.html">Maps</a>
+			<a href="admin_rooms.html">Rooms</a>
+		</nav>
+		<div class="links">
+			<a href="start.html">start</a>
+			<a href="wiki.html">wiki</a>
+			<a href="index.html">game</a>
+			<a href="#" id="logoutLink">log out</a>
+		</div>
+	</header>
+
+	<main>
+
+		<section>
+			<h2>Users</h2>
+			<table id="usersTable">
+				<thead>
+					<tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr>
+				</thead>
+				<tbody id="usersBody"></tbody>
+			</table>
+			<div id="usersEmpty" class="empty" hidden>No users yet.</div>
+
+			<form class="inline" id="addUserForm">
+				<div class="field">
+					<label for="newUsername">Username</label>
+					<input type="text" id="newUsername" maxlength="15" required autocomplete="off">
+				</div>
+				<div class="field">
+					<label for="newPassword">Password</label>
+					<input type="password" id="newPassword" required autocomplete="new-password">
+				</div>
+				<div class="field checkfield">
+					<input type="checkbox" id="newIsAdmin">
+					<label for="newIsAdmin" style="margin:0">Admin</label>
+				</div>
+				<button type="submit" class="primary">Add user</button>
+			</form>
+		</section>
+
+	</main>
+
+	<div id="status"></div>
+
+	<dialog id="passwordDialog">
+		<h3>Reset password</h3>
+		<form id="passwordForm">
+			<div class="field">
+				<label for="dialogUsername">User</label>
+				<input type="text" id="dialogUsername" disabled style="background:#0f0c0a;border:1px solid #332920;color:#8a7d6e;padding:7px 9px;border-radius:4px;font-size:13px;width:100%;">
+			</div>
+			<div class="field">
+				<label for="dialogPassword">New password</label>
+				<input type="password" id="dialogPassword" required autocomplete="new-password">
+			</div>
+			<div class="actions">
+				<button type="button" class="btn" id="dialogCancel">Cancel</button>
+				<button type="submit" class="primary">Set password</button>
+			</div>
+		</form>
+	</dialog>
+
+	<script src="server-config.js"></script>
+	<script type="module">
+
+		import { requireAdminSession, logout } from './src/auth_client.js';
+		import { api, showStatus, escapeHTML, fmtDate } from './admin_common.js';
+
+		const session = requireAdminSession();
+
+		document.getElementById( 'logoutLink' ).addEventListener( 'click', ( e ) => { e.preventDefault(); logout(); } );
+
+		async function loadUsers() {
+
+			const { users } = await api( '/admin/api/users' );
+			const body = document.getElementById( 'usersBody' );
+			const empty = document.getElementById( 'usersEmpty' );
+
+			body.innerHTML = '';
+			empty.hidden = users.length > 0;
+
+			for ( const u of users.sort( ( a, b ) => a.username.localeCompare( b.username ) ) ) {
+
+				const tr = document.createElement( 'tr' );
+				tr.innerHTML = `
+					<td>${ escapeHTML( u.username ) }${ u.username === session.username ? ' <span class="badge">you</span>' : '' }</td>
+					<td>${ u.isAdmin ? '<span class="badge admin">admin</span>' : '<span class="badge">player</span>' }</td>
+					<td>${ fmtDate( u.createdAt ) }</td>
+					<td></td>
+				`;
+
+				const actionsTd = tr.querySelector( 'td:last-child' );
+
+				const pwBtn = document.createElement( 'button' );
+				pwBtn.textContent = 'Reset password';
+				pwBtn.addEventListener( 'click', () => openPasswordDialog( u.username ) );
+				actionsTd.appendChild( pwBtn );
+
+				const adminBtn = document.createElement( 'button' );
+				adminBtn.textContent = u.isAdmin ? 'Remove admin' : 'Make admin';
+				adminBtn.addEventListener( 'click', () => toggleAdmin( u.username, ! u.isAdmin ) );
+				actionsTd.appendChild( adminBtn );
+
+				const delBtn = document.createElement( 'button' );
+				delBtn.textContent = 'Delete';
+				delBtn.className = 'danger';
+				delBtn.disabled = u.username === session.username;
+				delBtn.addEventListener( 'click', () => deleteUserRow( u.username ) );
+				actionsTd.appendChild( delBtn );
+
+				body.appendChild( tr );
+
+			}
+
+		}
+
+		async function toggleAdmin( username, isAdmin ) {
+
+			try {
+
+				await api( '/admin/api/users/' + encodeURIComponent( username ), {
+					method: 'PATCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify( { isAdmin } ),
+				} );
+				showStatus( ( isAdmin ? 'Made ' : 'Removed admin from ' ) + username + '.' );
+				loadUsers();
+
+			} catch ( e ) {
+
+				showStatus( e.message, true );
+
+			}
+
+		}
+
+		async function deleteUserRow( username ) {
+
+			if ( ! confirm( 'Delete user "' + username + '"? This cannot be undone.' ) ) return;
+
+			try {
+
+				await api( '/admin/api/users/' + encodeURIComponent( username ), { method: 'DELETE' } );
+				showStatus( 'Deleted ' + username + '.' );
+				loadUsers();
+
+			} catch ( e ) {
+
+				showStatus( e.message, true );
+
+			}
+
+		}
+
+		document.getElementById( 'addUserForm' ).addEventListener( 'submit', async ( e ) => {
+
+			e.preventDefault();
+
+			const username = document.getElementById( 'newUsername' ).value.trim();
+			const password = document.getElementById( 'newPassword' ).value;
+			const isAdmin = document.getElementById( 'newIsAdmin' ).checked;
+
+			try {
+
+				await api( '/admin/api/users', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify( { username, password, isAdmin } ),
+				} );
+				showStatus( 'Created ' + username + '.' );
+				e.target.reset();
+				loadUsers();
+
+			} catch ( e2 ) {
+
+				showStatus( e2.message, true );
+
+			}
+
+		} );
+
+		// Password reset dialog
+
+		const passwordDialog = document.getElementById( 'passwordDialog' );
+		let pendingUsername = '';
+
+		function openPasswordDialog( username ) {
+
+			pendingUsername = username;
+			document.getElementById( 'dialogUsername' ).value = username;
+			document.getElementById( 'dialogPassword' ).value = '';
+			passwordDialog.showModal();
+
+		}
+
+		document.getElementById( 'dialogCancel' ).addEventListener( 'click', () => passwordDialog.close() );
+
+		document.getElementById( 'passwordForm' ).addEventListener( 'submit', async ( e ) => {
+
+			e.preventDefault();
+			const password = document.getElementById( 'dialogPassword' ).value;
+
+			try {
+
+				await api( '/admin/api/users/' + encodeURIComponent( pendingUsername ), {
+					method: 'PATCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify( { password } ),
+				} );
+				showStatus( 'Password updated for ' + pendingUsername + '.' );
+				passwordDialog.close();
+
+			} catch ( err ) {
+
+				showStatus( err.message, true );
+
+			}
+
+		} );
+
+		if ( session !== null ) {
+
+			loadUsers().catch( ( e ) => showStatus( e.message, true ) );
+
+		}
+
+	</script>
+
+</body>
+</html>

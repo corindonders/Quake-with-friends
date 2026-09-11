@@ -129,6 +129,16 @@
 			font-size: 14.5px;
 			margin-bottom: 3px;
 			padding-right: 64px;
+			padding-left: 22px;
+		}
+
+		.card .num {
+			position: absolute;
+			top: 14px;
+			left: 16px;
+			font-size: 11.5px;
+			color: var(--text-dim);
+			font-variant-numeric: tabular-nums;
 		}
 
 		.card .id {
@@ -220,15 +230,26 @@
 		import { requireSession, fetchMapdb } from './src/auth_client.js';
 		requireSession();
 
-		const SECTIONS = [
-			{ key: 'mod', label: 'Mod Campaigns' },
+		// Fixed sections always shown first, in this order -- everything
+		// else (one section per distinct mapdb `mod` value, e.g. Quoth,
+		// Arcane Dimensions) is inserted between "Quake 1" and Deathmatch,
+		// in MOD_ORDER below (falling back to alphabetical for anything not
+		// listed there), so the page reads as "custom, base game, mods,
+		// deathmatch" instead of one big undifferentiated "Mod Campaigns" pile.
+		const LEAD_SECTIONS = [
 			{ key: 'custom', label: 'Custom Maps' },
-			{ key: 'vanilla-1', label: 'Episode 1 — Dimension of the Doomed' },
-			{ key: 'vanilla-2', label: 'Episode 2 — The Realm of Black Magic' },
-			{ key: 'vanilla-3', label: 'Episode 3 — The Netherworld' },
-			{ key: 'vanilla-4', label: 'Episode 4 — The Elder World' },
+			{ key: 'vanilla-1', label: 'Quake 1 — Episode 1: Dimension of the Doomed' },
+			{ key: 'vanilla-2', label: 'Quake 1 — Episode 2: The Realm of Black Magic' },
+			{ key: 'vanilla-3', label: 'Quake 1 — Episode 3: The Netherworld' },
+			{ key: 'vanilla-4', label: 'Quake 1 — Episode 4: The Elder World' },
+		];
+		const TRAIL_SECTIONS = [
 			{ key: 'deathmatch', label: 'Deathmatch' },
 		];
+
+		// Preferred order for mod sections; anything else found in the
+		// catalog is appended after these, alphabetically.
+		const MOD_ORDER = [ 'Quoth', 'Arcane Dimensions' ];
 
 		function sectionKeyFor( id, entry ) {
 
@@ -239,22 +260,65 @@
 
 			}
 
+			// Any map tagged with a `mod` gets grouped under that mod's own
+			// section, regardless of category -- e.g. the Q30 Deathmatch Jam
+			// maps stay category "deathmatch" (so they're excluded from the
+			// in-hub Travel panel like other deathmatch maps, see
+			// travel_ui.js), but still get pulled out of the generic
+			// "Deathmatch" pile into their own "Q30 Deathmatch Jam" section.
+			if ( entry.mod ) return 'mod:' + entry.mod;
+			if ( entry.category === 'mod' ) return 'mod:Other';
+
 			return entry.category;
 
 		}
 
-		function cardHTML( id, entry, locked ) {
+		// Builds the full section list once the catalog is known, so mod
+		// sections can be inserted between the fixed lead/trail ones above.
+		function buildSections( bySection ) {
+
+			const modKeys = Object.keys( bySection ).filter( ( k ) => k.startsWith( 'mod:' ) );
+			modKeys.sort( ( a, b ) => {
+
+				const nameA = a.slice( 4 ), nameB = b.slice( 4 );
+				const iA = MOD_ORDER.indexOf( nameA ), iB = MOD_ORDER.indexOf( nameB );
+				if ( iA !== - 1 && iB !== - 1 ) return iA - iB;
+				if ( iA !== - 1 ) return - 1;
+				if ( iB !== - 1 ) return 1;
+				return nameA.localeCompare( nameB );
+
+			} );
+
+			const modSections = modKeys.map( ( key ) => ( { key, label: key.slice( 4 ) } ) );
+
+			return [ ...LEAD_SECTIONS, ...modSections, ...TRAIL_SECTIONS ];
+
+		}
+
+		// Play order within a vanilla episode: the hub ("start") first,
+		// then eNmM by mission number.
+		function mapSequence( id ) {
+
+			if ( id === 'start' ) return 0;
+			const m = id.match( /m(\d+)/ );
+			return m ? parseInt( m[ 1 ], 10 ) : 999;
+
+		}
+
+		function cardHTML( id, entry, locked, num ) {
 
 			const badge = entry.mod ? entry.mod : ( entry.category === 'vanilla' ? '' : entry.category );
 			const badgeHTML = badge ? '<span class="badge">' + escapeHTML( badge ) + '</span>' : '';
 			const blurb = entry.blurb ? '<div class="blurb">' + escapeHTML( entry.blurb ) + '</div>' : '';
 			const lockNote = locked ? '<div class="lock-note">Requires registered pak1.pak</div>' : '';
+			const numHTML = num ? '<span class="num">' + num + '</span>' : '';
 
 			const tag = locked ? 'div' : 'a';
 			const href = locked ? '' : ( 'href="index.html?map=' + encodeURIComponent( id ) + '"' );
 
 			return '<' + tag + ' class="card' + ( locked ? ' locked' : '' ) + '" ' + href + ' data-name="' +
 				escapeHTML( ( entry.title + ' ' + id ).toLowerCase() ) + '">' +
+				numHTML +
 				badgeHTML +
 				'<div class="title">' + escapeHTML( entry.title ) + '</div>' +
 				'<span class="id">' + escapeHTML( id ) + '</span>' +
@@ -316,10 +380,16 @@
 
 			const container = document.getElementById( 'sections' );
 
-			for ( const { key, label } of SECTIONS ) {
+			for ( const { key, label } of buildSections( bySection ) ) {
 
 				const entries = bySection[ key ];
 				if ( ! entries || entries.length === 0 ) continue;
+
+				// Only the vanilla episodes have a real, meaningful play
+				// order (the hub, then m1..m8) -- custom/mod/deathmatch
+				// maps are just an unordered catalog, so leave them unnumbered.
+				const ordered = key.startsWith( 'vanilla-' );
+				if ( ordered ) entries.sort( ( a, b ) => mapSequence( a[ 0 ] ) - mapSequence( b[ 0 ] ) );
 
 				const section = document.createElement( 'section' );
 				section.dataset.section = key;
@@ -331,10 +401,12 @@
 				const grid = document.createElement( 'div' );
 				grid.className = 'grid';
 
+				let mapNum = 0;
 				for ( const [ id, entry ] of entries ) {
 
 					const locked = entry.requiresRegistered && ! haveRegistered;
-					grid.insertAdjacentHTML( 'beforeend', cardHTML( id, entry, locked ) );
+					mapNum++;
+					grid.insertAdjacentHTML( 'beforeend', cardHTML( id, entry, locked, ordered ? mapNum : 0 ) );
 
 				}
 

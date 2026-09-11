@@ -87,7 +87,11 @@ for ( let i = 0; i < MAX_MODELS; i ++ )
 const CONTENTS_SOLID = - 2;
 const MAX_MAP_LEAFS = 8192;
 let fatbytes = 0;
-const fatpvs = new Uint8Array( MAX_MAP_LEAFS / 8 );
+// Grown on demand in SV_FatPVS for BSP2 maps with more than MAX_MAP_LEAFS
+// leafs -- see the matching mod_novis/decompressed comment in gl_model.js.
+// A fixed 8192-leaf buffer here silently truncates entity network-visibility
+// for anything past leaf 8191 on a bigger map.
+let fatpvs = new Uint8Array( MAX_MAP_LEAFS / 8 );
 
 // sv_aim is only used in sv_main.js (not a physics cvar shared with sv_phys/sv_user)
 export const sv_aim = new cvar_t( 'sv_aim', '0.93' );
@@ -619,6 +623,7 @@ given point.
 function SV_FatPVS( org ) {
 
 	fatbytes = ( sv.worldmodel.numleafs + 31 ) >> 3;
+	if ( fatpvs.length < fatbytes ) fatpvs = new Uint8Array( fatbytes );
 	fatpvs.fill( 0, 0, fatbytes );
 	SV_AddToFatPVS( org, sv.worldmodel.nodes[ 0 ] );
 	return fatpvs;

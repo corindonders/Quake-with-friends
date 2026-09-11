@@ -26,6 +26,39 @@ section — pick whatever sounds fun next.
   and explicitly deferred in favor of building the modern HUD natively
   instead (see `cl_modernhud`).
 
+- **Admin: import map packages by URL** — let an admin paste a direct
+  `.zip` URL (e.g. a quaddicted.com filebase link) in `admin_maps.html`
+  and have the server download + extract it instead of copying files
+  onto the box by hand. Scoped and partially prototyped (2026-09-11),
+  then deferred so the user can build it themselves with Claude. Design
+  notes for picking this back up:
+  - No map-loading code needs to change. `COM_LoadMod`/`COM_AddModSearchDir`
+    (`src/pak.js`) already turn a mapdb entry's `layers: [...]` array into
+    a loose-file search dir, and `src/travel_ui.js` already passes
+    `layers` straight through as the room's `-mod` list. So: extract the
+    zip as-is into `custom_maps/<id>/` and add that path to the map's
+    `layers` -- the existing pipeline (both browser client and
+    `game_server.js`) picks it up with zero changes.
+  - New server module (e.g. `server/map_import.ts`): fetch the URL with a
+    timeout + size cap, unzip in-memory (no zip lib in the repo yet --
+    `fflate` via `npm:fflate` worked fine in Deno), zip-slip guard on
+    every entry path, write into `../custom_maps/<id>/`, verify
+    `maps/<id>.bsp` exists in the result (else clean up and report which
+    `.bsp` files *were* found, so the admin can fix the Map ID field).
+  - New admin-only route `POST /admin/api/maps/import` (`{id, url}`) --
+    keep it single-purpose (fetch+extract only), let the client fold the
+    returned `custom_maps/<id>` dir into the Layers field and then call
+    the existing `POST`/`PATCH /admin/api/maps` unchanged.
+  - Confirmed scope with the user: URL import only (no manual file
+    upload), and the URL must be a **direct .zip link**, not a
+    quaddicted.com metadata/db page (those need HTML scraping to find
+    the actual download, deliberately skipped).
+  - `custom_maps/` should be gitignored (large, reproducible from the
+    source URL, same reasoning as pak files).
+  - Note: this engine has no `.lit` (colored lightmap) support at all
+    today -- an imported package's `.lit` file would be preserved on
+    disk but ignored by the renderer. Separate feature if wanted.
+
 ## Gameplay modes / rules
 
 - **Low-gravity mode** — `sv_gravity` is already a real cvar; just needs

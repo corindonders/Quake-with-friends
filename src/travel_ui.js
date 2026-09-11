@@ -8,10 +8,19 @@ import { Cbuf_AddText } from './cmd.js';
 import { WS_CreateRoom } from './net_websocket.js';
 import { Con_Printf } from './common.js';
 import { fetchMapdb } from './auth_client.js';
+import { COM_LoadMod } from './pak.js';
 
 let panelEl = null;
 let buttonEl = null;
 let mapdbCache = null;
+
+// Mod dirs already layered in this page session. main.js loads whatever
+// the initial page load needed (the hub's mods/copper, or a directly-linked
+// map's own layers) and reports them via TravelUI_Init -- anything a travel
+// destination needs beyond that has to be loaded here too, since travelling
+// reuses the same page/WS connection instead of a fresh navigation (see
+// travelTo below).
+const loadedModDirs = new Set();
 
 /**
  * Deterministic 6-char room ID for a given map id, so every client that
@@ -62,6 +71,21 @@ async function travelTo( mapId, entry ) {
 	setStatus( 'Traveling to ' + entry.title + '…' );
 
 	try {
+
+		// Travelling reuses this same page/connection rather than a fresh
+		// navigation, so unlike main.js's initial-load path, any mod dirs
+		// this destination needs (custom maps, mission packs, ...) have to
+		// be layered in here -- otherwise the client tries to render a map
+		// whose loose files (bsp, textures, ...) it never fetched, even
+		// though the room server itself loaded them fine independently.
+		for ( const dir of ( entry.layers || [] ) ) {
+
+			if ( loadedModDirs.has( dir ) ) continue;
+			setStatus( 'Loading ' + dir + '…' );
+			await COM_LoadMod( dir );
+			loadedModDirs.add( dir );
+
+		}
 
 		const lobby = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) || null;
 		if ( ! lobby ) throw new Error( 'No server configured (server-config.js)' );
@@ -144,7 +168,10 @@ function togglePanel() {
 
 }
 
-export function TravelUI_Init() {
+export function TravelUI_Init( alreadyLoadedModDirs ) {
+
+	for ( const dir of ( alreadyLoadedModDirs || [] ) ) loadedModDirs.add( dir );
+
 
 	const style = document.createElement( 'style' );
 	style.textContent = `

@@ -13,9 +13,9 @@ import { cl_forwardspeed, cl_backspeed } from './cl_input.js';
 import { sensitivity, m_pitch, lookspring, lookstrafe, cl_color } from './cl_main.js';
 import { volume } from './sound.js';
 import { Cvar_SetValue, Cvar_VariableValue } from './cvar.js';
-import { scr_viewsize, scr_con_current } from './gl_screen.js';
+import { scr_viewsize, scr_con_current, scr_fov } from './gl_screen.js';
 import { v_gamma } from './view.js';
-import { gl_texturemode, GL_UpdateTextureFiltering } from './glquake.js';
+import { gl_texturemode, GL_UpdateTextureFiltering, r_lerpmodels, r_antialias } from './glquake.js';
 import { skill, coop, teamplay, deathmatch, svs } from './server.js';
 import { gp_look_yaw, gp_look_pitch, gp_invert_look } from './in_web.js';
 import { Draw_GetVirtualWidth, Draw_GetVirtualHeight } from './gl_draw.js';
@@ -1578,6 +1578,22 @@ function M_AdjustSliders( dir ) {
 			Cvar_SetValue( 'crosshair', Cvar_VariableValue( 'crosshair' ) !== 0 ? 0 : 1 );
 			break;
 
+		case 13: // field of view
+			Cvar_SetValue( 'fov', scr_fov.value + dir * 5 );
+			if ( scr_fov.value < 30 )
+				Cvar_SetValue( 'fov', 30 );
+			if ( scr_fov.value > 130 )
+				Cvar_SetValue( 'fov', 130 );
+			break;
+
+		case 14: // smooth animations (r_lerpmodels)
+			Cvar_SetValue( 'r_lerpmodels', ! r_lerpmodels.value ? 1 : 0 );
+			break;
+
+		case 15: // anti-aliasing (r_antialias)
+			Cvar_SetValue( 'r_antialias', ! r_antialias.value ? 1 : 0 );
+			break;
+
 	}
 
 }
@@ -1590,7 +1606,7 @@ function M_AdjustSliders( dir ) {
 ==============================================================================
 */
 
-const OPTIONS_ITEMS = 14;
+const OPTIONS_ITEMS = 17;
 let m_options_cursor = 0;
 
 function M_Menu_Options_f() {
@@ -1647,7 +1663,18 @@ function M_Options_Draw() {
 	M_Print( 16, 128, '             Crosshair' );
 	M_DrawCheckbox( 220, 128, Cvar_VariableValue( 'crosshair' ) );
 
-	M_Print( 16, 136, '      Controller Setup' );
+	M_Print( 16, 136, '        Field of View' );
+	r = ( scr_fov.value - 30 ) / ( 130 - 30 );
+	M_DrawSlider( 220, 136, r );
+	M_Print( 306, 136, String( Math.round( scr_fov.value ) ) );
+
+	M_Print( 16, 144, '    Smooth Animations' );
+	M_DrawCheckbox( 220, 144, r_lerpmodels.value );
+
+	M_Print( 16, 152, '        Anti-Aliasing' );
+	M_DrawCheckbox( 220, 152, r_antialias.value );
+
+	M_Print( 16, 160, '      Controller Setup' );
 
 	// cursor
 	M_DrawCharacter( 200, 32 + m_options_cursor * 8, 12 + ( ( Math.floor( _realtime_get() * 4 ) ) & 1 ) );
@@ -1686,7 +1713,7 @@ function M_Options_Key( key ) {
 					Cbuf_AddText( 'gamma 1\n' );
 					Cbuf_AddText( 'volume 0.4\n' );
 					break;
-				case 13:
+				case 16:
 					M_Menu_GamepadOptions_f();
 					break;
 				default:

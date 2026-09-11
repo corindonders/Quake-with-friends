@@ -23,6 +23,7 @@ import { S_PrecacheSound, S_StartSound } from './snd_dma.js';
 import { R_RunParticleEffect, R_ParticleExplosion, R_BlobExplosion,
 	R_ParticleExplosion2, R_LavaSplash, R_TeleportSplash } from './render.js';
 import { Mod_ForName } from './gl_model.js';
+import { d_8to24table } from './vid.js';
 
 let num_temp_entities = 0;
 
@@ -201,6 +202,7 @@ export function CL_ParseTEnt() {
 			dl.radius = 350;
 			dl.die = cl.time + 0.5;
 			dl.decay = 300;
+			dl.color[ 0 ] = 1; dl.color[ 1 ] = 0.6; dl.color[ 2 ] = 0.2; // orange fireball
 			S_StartSound( - 1, 0, cl_sfx_r_exp3, pos, 1, 1 );
 			break;
 
@@ -259,6 +261,18 @@ export function CL_ParseTEnt() {
 			dl2.radius = 350;
 			dl2.die = cl.time + 0.5;
 			dl2.decay = 300;
+			// Tint the light to match the particles' own palette range instead
+			// of leaving it plain white, same idea as the orange TE_EXPLOSION
+			// fireball above.
+			{
+
+				const midIdx = colorStart + ( colorLength >> 1 );
+				const rgba = d_8to24table[ midIdx & 0xff ];
+				dl2.color[ 0 ] = ( rgba & 0xff ) / 255;
+				dl2.color[ 1 ] = ( ( rgba >> 8 ) & 0xff ) / 255;
+				dl2.color[ 2 ] = ( ( rgba >> 16 ) & 0xff ) / 255;
+
+			}
 			S_StartSound( - 1, 0, cl_sfx_r_exp3, pos, 1, 1 );
 			break;
 

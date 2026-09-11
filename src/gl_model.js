@@ -266,6 +266,8 @@ export class msurface_t {
 		this.cached_dlight = false;							// true if dynamic light in cache
 		this.samples = null;		// Uint8Array -- [numstyles*surfsize]
 		this.sampleOffset = 0;		// offset into lightdata
+		this.litsamples = null;	// Uint8Array -- RGB triples, [numstyles*surfsize*3], or null if no .lit
+		this.litSampleOffset = 0;	// offset into litdata (== sampleOffset * 3)
 
 	}
 
@@ -620,7 +622,14 @@ export class model_t {
 let loadmodel = null;
 let loadname = '';
 
-const mod_novis = new Uint8Array( MAX_MAP_LEAFS / 8 );
+// Sized for vanilla's MAX_MAP_LEAFS by default, but BSP2 maps can exceed
+// that by a lot (e.g. a large ericw-tools-compiled map with ~29000 leafs
+// needs ~3.6KB/row, not the 1KB this starts at) -- EnsureVisBufferSize grows
+// both of these to fit whatever model is actually being queried instead of
+// silently truncating the PVS row and leaving everything past leaf 8191
+// permanently marked not-visible (which reads as "only a few leafs near
+// the low end of the leaf list ever render").
+let mod_novis = new Uint8Array( MAX_MAP_LEAFS / 8 );
 
 // Was 512 -- pure client-side cache size, no protocol implications. Mods
 // with hundreds of monster/prop models plus many maps (Arcane Dimensions
@@ -652,8 +661,26 @@ let r_notexture_mip = null;
 // mod_base: Uint8Array - the raw file bytes of the BSP currently being loaded
 let mod_base = null;
 
-// Decompressed visibility buffer (reused)
-const decompressed = new Uint8Array( MAX_MAP_LEAFS / 8 );
+// Decompressed visibility buffer (reused) -- see mod_novis comment above.
+let decompressed = new Uint8Array( MAX_MAP_LEAFS / 8 );
+
+// Grows mod_novis/decompressed to fit a model with more than MAX_MAP_LEAFS
+// leafs. A no-op for every normal-sized map (the common case).
+function EnsureVisBufferSize( numleafs ) {
+
+	const needed = ( numleafs + 7 ) >> 3;
+
+	if ( decompressed.length < needed )
+		decompressed = new Uint8Array( needed );
+
+	if ( mod_novis.length < needed ) {
+
+		mod_novis = new Uint8Array( needed );
+		mod_novis.fill( 0xff );
+
+	}
+
+}
 
 // ============================================================================
 // Stub functions for GL operations not yet ported
@@ -945,6 +972,8 @@ export function Mod_PointInLeaf( p, model ) {
 
 export function Mod_DecompressVis( _in, inOffset, model ) {
 
+	EnsureVisBufferSize( model.numleafs );
+
 	const row = ( model.numleafs + 7 ) >> 3;
 	let outIdx = 0;
 
@@ -991,8 +1020,12 @@ export function Mod_DecompressVis( _in, inOffset, model ) {
 
 export function Mod_LeafPVS( leaf, model ) {
 
-	if ( leaf === model.leafs[ 0 ] )
+	if ( leaf === model.leafs[ 0 ] ) {
+
+		EnsureVisBufferSize( model.numleafs );
 		return mod_novis;
+
+	}
 	return Mod_DecompressVis( leaf.compressed_vis, leaf.compressed_vis_offset, model );
 
 }
@@ -1421,7 +1454,11 @@ function Mod_LoadTextures( fileofs, filelen ) {
 // Mod_LoadLighting
 // ============================================================================
 
+const LIT_MAGIC = 0x54494c51; // 'QLIT' read as a little-endian uint32
+
 function Mod_LoadLighting( fileofs, filelen ) {
+
+	loadmodel.litdata = null;
 
 	if ( filelen === 0 ) {
 
@@ -1432,6 +1469,31 @@ function Mod_LoadLighting( fileofs, filelen ) {
 
 	loadmodel.lightdata = new Uint8Array( filelen );
 	loadmodel.lightdata.set( mod_base.subarray( fileofs, fileofs + filelen ) );
+
+	// Optional colored-lighting companion (ericw-tools/TyrUtils .lit format):
+	// "QLIT" magic + int32 version(1), then one RGB triple per light sample
+	// -- same sample count/order as the mono LIGHTING lump above. Fetched
+	// alongside the .bsp itself (see cl_parse.js's world-model precache), so
+	// it's already sitting in the pak/virtualFiles cache by the time this
+	// (synchronous) load runs.
+	if ( ! loadmodel.name.toLowerCase().endsWith( '.bsp' ) ) return;
+
+	const litName = loadmodel.name.slice( 0, - 4 ) + '.lit';
+	const litBuf = COM_LoadFile( litName );
+	if ( ! litBuf || litBuf.byteLength < 8 ) return;
+
+	const litView = new DataView( litBuf );
+	const expectedBytes = 8 + loadmodel.lightdata.length * 3;
+
+	if ( litView.getUint32( 0, true ) === LIT_MAGIC && litView.getInt32( 4, true ) === 1 && litBuf.byteLength >= expectedBytes ) {
+
+		loadmodel.litdata = new Uint8Array( litBuf, 8, loadmodel.lightdata.length * 3 );
+
+	} else {
+
+		Con_Printf( 'Ignoring ' + litName + ': unrecognized .lit format\n' );
+
+	}
 
 }
 
@@ -1812,6 +1874,13 @@ function Mod_LoadFaces( fileofs, filelen ) {
 
 			s.samples = loadmodel.lightdata;
 			s.sampleOffset = lightofs;
+
+			if ( loadmodel.litdata ) {
+
+				s.litsamples = loadmodel.litdata;
+				s.litSampleOffset = lightofs * 3;
+
+			}
 
 		}
 

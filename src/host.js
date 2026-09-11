@@ -26,6 +26,7 @@ import { Horde_Think } from './horde.js';
 import { sv, svs, client_t,
 	host_client, set_host_client } from './server.js';
 import { R_Init, D_FlushCaches } from './gl_rmisc.js';
+import { Fog_Init } from './gl_fog.js';
 import { VID_Init, VID_Shutdown } from './vid.js';
 import { Draw_Init, Draw_Character, Draw_String, Draw_ConsoleBackground, Draw_SetExternals, Draw_PicFromWad, Draw_CachePic, Draw_Pic, Draw_SubPic, Draw_TransPic, Draw_TransPicTranslate, Draw_Fill, Draw_FadeScreen } from './gl_draw.js';
 import { SCR_Init, SCR_UpdateScreen, SCR_SetExternals, SCR_EndLoadingPlaque, SCR_BeginLoadingPlaque } from './gl_screen.js';
@@ -93,6 +94,8 @@ export const deathmatch = new cvar_t( 'deathmatch', '0' ); // 0, 1, or 2
 export const coop = new cvar_t( 'coop', '0' ); // 0 or 1
 
 const pausable = new cvar_t( 'pausable', '1' );
+
+const registered = new cvar_t( 'registered', '1' );
 
 const temp1 = new cvar_t( 'temp1', '0' );
 
@@ -179,6 +182,8 @@ function Host_InitLocal() {
 	Cvar_RegisterVariable( coop );
 
 	Cvar_RegisterVariable( pausable );
+
+	Cvar_RegisterVariable( registered );
 
 	Cvar_RegisterVariable( temp1 );
 
@@ -335,6 +340,7 @@ export async function Host_Init( parms ) {
 
 	SCR_Init();
 	R_Init();
+	Fog_Init();
 	S_Init();
 	S_SetCallbacks( {
 		getHostFrametime: () => host_frametime
@@ -404,6 +410,8 @@ export async function Host_Init( parms ) {
 	Cbuf_AddText( 'bind d +moveright\n' );
 	Cbuf_AddText( 'bind SPACE +jump\n' );
 	Cbuf_AddText( 'bind MOUSE1 +attack\n' );
+	Cbuf_AddText( 'bind MWHEELUP "impulse 10"\n' );
+	Cbuf_AddText( 'bind MWHEELDOWN "impulse 12"\n' );
 
 	// Always run by default for the web port
 	Cbuf_AddText( 'cl_forwardspeed 400\n' );

@@ -246,6 +246,16 @@ export const r_shadowmaps = { name: 'r_shadowmaps', string: '1', value: 1, archi
 export const r_mirroralpha = { name: 'r_mirroralpha', string: '1', value: 1 };
 export const r_wateralpha = { name: 'r_wateralpha', string: '1', value: 1 };
 export const r_dynamic = { name: 'r_dynamic', string: '1', value: 1 };
+// Post-process FXAA (see gl_postprocess.js) -- vanilla had no AA at all, but
+// every modern source port offers it, and unlike real MSAA this can be
+// toggled at any time without recreating the WebGL context.
+export const r_antialias = { name: 'r_antialias', string: '1', value: 1, archive: true };
+// Blends alias-model vertex positions between the previous and current
+// QuakeC animation frame instead of hard-cutting between them -- the same
+// enhancement every modern source port (QuakeSpasm, DarkPlaces, FTE, ...)
+// adds on top of vanilla's ~10fps monster/player animation. See
+// R_DrawAliasModel in gl_mesh.js.
+export const r_lerpmodels = { name: 'r_lerpmodels', string: '1', value: 1, archive: true };
 export const r_novis = { name: 'r_novis', string: '0', value: 0 };
 // Packs eligible world diffuse textures into shared atlas pages so surfaces
 // that used to need separate materials (and thus separate draw calls) can
