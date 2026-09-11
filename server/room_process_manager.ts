@@ -1,4 +1,4 @@
-// Room Process Manager for Three-Quake
+// Room Process Manager for Quake with Friends
 // Spawns and manages isolated Deno processes for each game room
 // This matches how original Quake handled multiple games: separate server processes
 

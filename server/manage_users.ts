@@ -1,4 +1,4 @@
-// Admin CLI for managing Three-Quake accounts.
+// Admin CLI for managing Quake with Friends accounts.
 //
 // Usage:
 //   deno run --allow-read --allow-write --unstable-kv server/manage_users.ts add <username> <password> [--admin]

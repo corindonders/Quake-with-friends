@@ -137,9 +137,12 @@ export const EF_TRACER3 = 128;		// purple trail
 // ============================================================================
 
 export const MAX_SKINS = 32;
-export const MAXALIASVERTS = 1024;
+// Pure client-side array-size checks, no protocol implications -- raised
+// from vanilla's 1024/2048 for higher-poly mods like Arcane Dimensions
+// (its highest-poly monster model needs ~1376 verts).
+export const MAXALIASVERTS = 4096;
 export const MAXALIASFRAMES = 256;
-export const MAXALIASTRIS = 2048;
+export const MAXALIASTRIS = 8192;
 
 // ============================================================================
 // In-memory model structures (m*_t)
@@ -619,7 +622,10 @@ let loadname = '';
 
 const mod_novis = new Uint8Array( MAX_MAP_LEAFS / 8 );
 
-const MAX_MOD_KNOWN = 512;
+// Was 512 -- pure client-side cache size, no protocol implications. Mods
+// with hundreds of monster/prop models plus many maps (Arcane Dimensions
+// alone ships 473 .mdl files) need much more headroom than vanilla did.
+const MAX_MOD_KNOWN = 4096;
 const mod_known = [];
 let mod_numknown = 0;
 
@@ -752,6 +758,11 @@ function GL_LoadTexture( name, width, height, data, mipmap, alpha, splitFullbrig
 		texture._fullbright = fullbrightTexture;
 
 	}
+
+	// Flag masked ('{'-prefixed) textures so the material factory (see
+	// createQuakeLightmapMaterial in gl_rsurf.js) knows to cut out the
+	// transparent pixels instead of just leaving them opaque-black.
+	if ( alpha ) texture._masked = true;
 
 	// Register for filter updates when setting changes
 	GL_RegisterTexture( texture );
@@ -1285,7 +1296,14 @@ function Mod_LoadTextures( fileofs, filelen ) {
 
 		} else {
 
-			tx.gl_texture = GL_LoadTexture( name, tx.width, tx.height, tx.pixels, true, false, true );
+			// A leading '{' is Quake's convention for a masked/"fence"
+			// texture (grates, chains, foliage, ...) -- palette index 255
+			// (which the standard palette itself defines as pure black, so
+			// an unmasked texture just silently renders a black background
+			// instead of garbage) should be cut out as transparent.
+			const masked = name.charAt( 0 ) === '{';
+			tx.masked = masked;
+			tx.gl_texture = GL_LoadTexture( name, tx.width, tx.height, tx.pixels, true, masked, true );
 
 		}
 
@@ -1711,8 +1729,19 @@ function CalcSurfaceExtents( s ) {
 
 		s.texturemins[ i ] = bmins * 16;
 		s.extents[ i ] = ( bmaxs - bmins ) * 16;
-		if ( ! ( tex.flags & TEX_SPECIAL ) && s.extents[ i ] > 512 )
-			Sys_Error( 'Bad surface extents' );
+		// Vanilla GLQuake capped this at 512 (32 lightmap texels), tied to
+		// its 128x128 lightmap atlas page. This engine's atlas page is
+		// BLOCK_WIDTH/BLOCK_HEIGHT = 1024 (see gl_rsurf.js), so a surface
+		// can be up to (1024-1)*16 = 16368 units across one axis before it
+		// can no longer fit a single atlas page -- AllocBlock() in
+		// gl_rsurf.js already fails gracefully (Sys_Error('AllocBlock:
+		// full')) if a surface is still too big for that, so this is just
+		// relaxing an artificially small vanilla limit to match this
+		// engine's actual capacity. Arcane Dimensions' large open maps have
+		// surfaces well past 512 that never existed in 1996-era maps
+		// (ad_lavatomb: 4384, ad_azad: 8448).
+		if ( ! ( tex.flags & TEX_SPECIAL ) && s.extents[ i ] > 16368 )
+			Sys_Error( 'Bad surface extents (axis ' + i + ', extents=' + s.extents[ i ] + ', flags=' + tex.flags + ')' );
 
 	}
 

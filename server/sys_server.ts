@@ -2,7 +2,7 @@
 // Replaces browser sys.js for the dedicated server
 
 export function Sys_Init(): void {
-	console.log('Three-Quake Dedicated Server initializing...');
+	console.log('Quake with Friends Dedicated Server initializing...');
 }
 
 export function Sys_Error(error: string): never {

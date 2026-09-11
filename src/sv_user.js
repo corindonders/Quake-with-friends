@@ -664,6 +664,9 @@ export function SV_ReadClientMessage() {
 					else if ( Q_strncasecmp( s, 'ban', 3 ) ) allowed = 1;
 					else if ( Q_strncasecmp( s, 'summon', 6 ) ) allowed = 1;
 					else if ( Q_strncasecmp( s, 'classlist', 9 ) ) allowed = 1;
+					else if ( Q_strncasecmp( s, 'horde_start', 11 ) ) allowed = 1;
+					else if ( Q_strncasecmp( s, 'horde_stop', 10 ) ) allowed = 1;
+					else if ( Q_strncasecmp( s, 'horde_status', 12 ) ) allowed = 1;
 
 					if ( allowed === 2 )
 						Cbuf_InsertText( s );

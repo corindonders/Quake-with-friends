@@ -25,6 +25,7 @@ import { SIGNONS, MAX_DLIGHTS, MAX_EFRAGS, MAX_BEAMS, MAX_TEMP_ENTITIES,
 import { anglemod, VectorCopy, VectorMA, AngleVectors } from './mathlib.js';
 import { R_RocketTrail, R_RemoveEfrags, R_EntityParticles } from './render.js';
 import { CL_InitTEnts, CL_UpdateTEnts } from './cl_tent.js';
+import { Feed_Reset } from './hud_feed.js';
 import { host_frametime, realtime, Host_Error, Host_ShutdownServer, Host_ClearMemory, sv } from './host.js';
 import { SCR_EndLoadingPlaque, SCR_BeginLoadingPlaque } from './gl_screen.js';
 import { S_StopAllSounds } from './snd_dma.js';
@@ -76,6 +77,7 @@ export function CL_ClearState() {
 	cl.movemessages = 0;
 	cl.cmd = new usercmd_t();
 	cl.stats.fill( 0 );
+	Feed_Reset();
 	cl.items = 0;
 	cl.item_gettime.fill( 0 );
 	cl.faceanimtime = 0;

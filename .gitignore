@@ -7,6 +7,16 @@
 /pak2.pak
 /pak3.pak
 
+# Mod pak files that are too large for a normal git push (GitHub hard-rejects
+# any file over 100MB without Git LFS, which this repo doesn't use) -- each
+# deploy copies these in locally, same as the base game's own pak1.pak above.
+# ad_start.bsp (extracted loose from mods/ad/pak1.pak, ~12MB) stays tracked --
+# it's small and needed to disambiguate from the hub's own "start" map key.
+/mods/ad/pak0.pak
+/mods/ad/pak1.pak
+/mods/ad/pak2.pak
+/mods/quoth/pak1.pak
+
 # User accounts/sessions database (password hashes) and TLS keys -- never commit.
 /server/data/
 /server/*.pem

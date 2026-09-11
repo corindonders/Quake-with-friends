@@ -17,16 +17,30 @@ export const MAX_OSPATH = 128; // max length of a filesystem pathname
 
 export const ON_EPSILON = 0.1; // point on plane side epsilon
 
-export const MAX_MSGLEN = 8000; // max length of a reliable message
+// Was 8000 -- a UDP-era limit that doesn't apply to our WebSocket transport.
+// Needs to comfortably exceed sv.signon_buf's size (server.js) since the
+// whole signon buffer gets copied into one client message in one shot
+// (see Host_Spawn_f in host_cmd.js) -- mods with big precache/baseline
+// lists (Arcane Dimensions) need a lot more room here than vanilla did.
+export const MAX_MSGLEN = 300000; // max length of a reliable message
 export const MAX_DATAGRAM = 1024; // max length of unreliable message
 
 //
 // per-level limits
 //
-export const MAX_EDICTS = 600; // FIXME: ouch! ouch! ouch!
+export const MAX_EDICTS = 8192; // was 600 (id's own "FIXME: ouch!") -- entity
+// numbers are already sent as shorts (see SV_WriteSpawn in sv_main.js), so
+// this was always just a soft array-size cap, not a wire-format one.
 export const MAX_LIGHTSTYLES = 64;
-export const MAX_MODELS = 256; // these are sent over the net as bytes
-export const MAX_SOUNDS = 256; // so they cannot be blindly increased
+// modelindex/soundindex were originally sent over the net as single bytes,
+// capping these at 256 -- a real constraint for id's original engine, which
+// had to stay wire-compatible with third-party clients/servers. We don't:
+// this engine's client and server are both our own code (see the
+// MSG_Write/ReadShort call sites for modelindex in sv_main.js/cl_parse.js),
+// so these are raised for mods like Arcane Dimensions that precache far
+// more than 256 models/sounds.
+export const MAX_MODELS = 2048;
+export const MAX_SOUNDS = 2048;
 
 export const SAVEGAME_COMMENT_LENGTH = 39;
 

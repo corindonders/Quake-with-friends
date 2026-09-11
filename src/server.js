@@ -66,7 +66,10 @@ export class server_t {
 		this.reliable_datagram_buf = new Uint8Array( MAX_DATAGRAM );
 
 		this.signon = new sizebuf_t();
-		this.signon_buf = new Uint8Array( 8192 );
+		// Was 8192 -- too small for mods with large precache/baseline lists
+		// (e.g. Arcane Dimensions' bigger maps). Keep in sync with
+		// sv.signon.maxsize in SV_SpawnServer (sv_main.js).
+		this.signon_buf = new Uint8Array( 262144 );
 
 	}
 

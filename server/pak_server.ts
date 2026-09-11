@@ -3,7 +3,8 @@
 
 import { Sys_Printf, Sys_Error } from './sys_server.ts';
 
-const MAX_FILES_IN_PACK = 2048;
+// Keep in sync with src/pak.js's own copy.
+const MAX_FILES_IN_PACK = 8192;
 
 interface PackFile {
 	name: string;

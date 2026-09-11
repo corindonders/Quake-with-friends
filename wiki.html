@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Three-Quake Wiki</title>
+	<title>Quake with Friends — Wiki</title>
 	<link rel="icon" type="image/svg+xml" href="icon.svg">
 	<link rel="apple-touch-icon" href="icon.png">
 	<style>
@@ -130,6 +130,50 @@
 			word-break: break-word;
 		}
 
+		.classnames .cn-link {
+			cursor: pointer;
+			text-decoration: underline dotted var(--text-dim);
+			text-underline-offset: 3px;
+		}
+		.classnames .cn-link:hover { color: var(--accent-bright); text-decoration-color: var(--accent-bright); }
+		.classnames .cn-link.active { color: var(--accent-bright); text-decoration-style: solid; }
+
+		#preview-viewport {
+			position: relative;
+			width: 100%;
+			max-width: 480px;
+			aspect-ratio: 1 / 1;
+			background: var(--code-bg);
+			border: 1px solid var(--panel-border);
+			border-radius: 6px;
+			overflow: hidden;
+		}
+		#preview-canvas { width: 100%; height: 100%; display: block; }
+		#preview-placeholder {
+			position: absolute;
+			inset: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			text-align: center;
+			padding: 20px;
+			font-size: 12.5px;
+			color: var(--text-dim);
+			pointer-events: none;
+		}
+		#preview-label {
+			position: absolute;
+			left: 8px;
+			bottom: 8px;
+			font-family: 'Consolas', 'Courier New', monospace;
+			font-size: 11px;
+			color: var(--good);
+			background: rgba(0,0,0,0.55);
+			padding: 2px 6px;
+			border-radius: 4px;
+			pointer-events: none;
+		}
+
 		.badge {
 			display: inline-block;
 			font-size: 10px;
@@ -236,6 +280,10 @@
 				</table>
 				<p>On phones/tablets, on-screen <strong>FIRE</strong> and <strong>JUMP</strong> buttons appear automatically —
 					drag anywhere else on screen to look around and walk.</p>
+				<div class="tip"><strong>Modern corner HUD:</strong> type <code>cl_modernhud 1</code> in the console to
+					switch from the classic full-width status bar to a corner-anchored layout (face/health bottom-left,
+					ammo/keys/powerups bottom-right) inspired by the 2021 rerelease. <code>cl_modernhud 0</code> switches
+					back. It's saved with your other settings, so you only need to set it once.</div>
 			</section>
 
 			<section id="console">
@@ -268,18 +316,29 @@
 				<p>What's spawnable depends on which mod a room is running — these lists were pulled directly from each
 					mod's own game logic, so they're exact. Use <code>summon &lt;name&gt;</code> to spawn any of them.</p>
 
+				<div class="card" id="preview-card">
+					<h3>3D Preview</h3>
+					<p style="margin-top:0">Names underlined below (in the Vanilla Quake and Copper lists) are clickable —
+						click one to load its actual in-game model here, straight from the game's own asset files.</p>
+					<div id="preview-viewport">
+						<canvas id="preview-canvas"></canvas>
+						<div id="preview-placeholder">Click a monster, weapon, or item name below</div>
+						<div id="preview-label"></div>
+					</div>
+				</div>
+
 				<div class="card">
 					<h3>Vanilla Quake</h3>
 					<p><strong>Monsters</strong></p>
-					<div class="classnames">monster_army, monster_boss, monster_demon1, monster_dog, monster_enforcer,
+					<div class="classnames" data-previewable="true">monster_army, monster_boss, monster_demon1, monster_dog, monster_enforcer,
 						monster_fish, monster_hell_knight, monster_knight, monster_ogre, monster_ogre_marksman,
 						monster_oldone, monster_shalrath, monster_shambler, monster_tarbaby, monster_wizard, monster_zombie</div>
 					<p><strong>Items</strong></p>
-					<div class="classnames">item_health, item_armor1, item_armor2, item_armorInv, item_shells, item_spikes,
+					<div class="classnames" data-previewable="true">item_health, item_armor1, item_armor2, item_armorInv, item_shells, item_spikes,
 						item_rockets, item_cells, item_key1, item_key2, item_sigil, item_artifact_invulnerability,
 						item_artifact_envirosuit, item_artifact_invisibility, item_artifact_super_damage</div>
 					<p><strong>Weapons</strong></p>
-					<div class="classnames">weapon_supershotgun, weapon_nailgun, weapon_supernailgun,
+					<div class="classnames" data-previewable="true">weapon_supershotgun, weapon_nailgun, weapon_supernailgun,
 						weapon_grenadelauncher, weapon_rocketlauncher, weapon_lightning</div>
 				</div>
 
@@ -289,16 +348,16 @@
 					<p><strong>Monsters</strong> (spawn the plain <code>monster_x</code> ones directly; the
 						<code>_spawn</code>/<code>_spawner</code> variants are Copper's coop spawn-point system, not
 						meant to be summoned directly)</p>
-					<div class="classnames">monster_army, monster_boss, monster_demon1, monster_dog, monster_enforcer,
+					<div class="classnames" data-previewable="true">monster_army, monster_boss, monster_demon1, monster_dog, monster_enforcer,
 						monster_fish, monster_hell_knight, monster_knight, monster_ogre, monster_ogre_marksman,
 						monster_oldone, monster_shalrath, monster_shambler, monster_tarbaby, monster_wizard, monster_zombie</div>
 					<p><strong>Items</strong></p>
-					<div class="classnames">item_health, item_armor1, item_armor2, item_armorInv, item_backpack, item_shells,
+					<div class="classnames" data-previewable="true">item_health, item_armor1, item_armor2, item_armorInv, item_backpack, item_shells,
 						item_spikes, item_rockets, item_cells, item_key1, item_key2, item_sigil,
 						item_artifact_invulnerability, item_artifact_envirosuit, item_artifact_invisibility,
 						item_artifact_super_damage</div>
 					<p><strong>Weapons</strong></p>
-					<div class="classnames">weapon_shotgun, weapon_supershotgun, weapon_nailgun, weapon_supernailgun,
+					<div class="classnames" data-previewable="true">weapon_shotgun, weapon_supershotgun, weapon_nailgun, weapon_supernailgun,
 						weapon_grenadelauncher, weapon_rocketlauncher, weapon_lightning</div>
 				</div>
 
@@ -375,6 +434,34 @@
 						(<kbd>*</kbd>), <code>impulse 69</code> "gimme" — gives a pile of starting gear
 						(<kbd>;</kbd>). These are the mod's own, separate from the engine's <code>give</code>/<code>summon</code>.</div>
 				</div>
+
+				<div class="card">
+					<h3>Horde Mode <span class="badge">engine feature</span></h3>
+					<p>Wave-based monster survival, works on any map/mod — not a mod itself, so there's nothing to add to
+						a room's Travel entry. Start it from the console once you're in a room:</p>
+					<table>
+						<tr><th>Command</th><th>What it does</th></tr>
+						<tr><td><code>horde_start</code></td><td>Begins wave 1 after a short delay. Monsters spawn scattered
+							around a random player each wave; the next wave starts a few seconds after the last monster dies.</td></tr>
+						<tr><td><code>horde_stop</code></td><td>Ends it.</td></tr>
+						<tr><td><code>horde_status</code></td><td>Prints the current wave, how many monsters are still
+							alive, and the active difficulty cvar values. Read-only — anyone can check, not just the host.</td></tr>
+					</table>
+					<p>Difficulty is tunable — like any server cvar (<code>sv_gravity</code>, <code>teamplay</code>, ...),
+						only the room's privileged host can change these, and a chosen value is remembered across restarts:</p>
+					<table>
+						<tr><th>Cvar</th><th>Default</th><th>Controls</th></tr>
+						<tr><td><code>sv_horde_startdelay</code></td><td>3</td><td>Seconds after <code>horde_start</code> before wave 1.</td></tr>
+						<tr><td><code>sv_horde_wavedelay</code></td><td>8</td><td>Seconds between a wave clearing and the next one starting.</td></tr>
+						<tr><td><code>sv_horde_basecount</code></td><td>3</td><td>Monsters in wave 1.</td></tr>
+						<tr><td><code>sv_horde_growth</code></td><td>1</td><td>Extra monsters added per wave after that.</td></tr>
+						<tr><td><code>sv_horde_maxsize</code></td><td>16</td><td>Hard cap on monsters in a single wave.</td></tr>
+						<tr><td><code>sv_horde_healthgrowth</code></td><td>0.04</td><td>Fractional monster health increase per wave (0.04 = +4%/wave) — makes later waves tougher, not just bigger.</td></tr>
+					</table>
+					<div class="tip"><strong>Example:</strong> <code>sv_horde_wavedelay 15</code> gives the group more
+						breathing room to loot/heal between waves. <code>sv_horde_growth 2</code> ramps up faster for a
+						shorter, more intense run.</div>
+				</div>
 			</section>
 
 			<section id="admin">
@@ -435,6 +522,14 @@ deno run --allow-read --allow-write --unstable-kv manage_users.ts add yourname y
 		</main>
 	</div>
 
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js"
+		}
+	}
+	</script>
+
 	<script src="server-config.js"></script>
 	<script type="module">
 
@@ -446,6 +541,185 @@ deno run --allow-read --allow-write --unstable-kv manage_users.ts add yourname y
 
 			const adminLink = document.querySelector( 'header .links a[href="admin.html"]' );
 			if ( adminLink ) adminLink.remove();
+
+		}
+
+	</script>
+
+	<script type="module">
+
+		import * as THREE from 'three';
+		import { MDLPreview_LoadPaks, MDLPreview_Load } from './src/mdl_preview.js';
+
+		// Only entries we're confident map to a real .mdl (as opposed to a
+		// bsp submodel or sprite pickup, e.g. health/ammo boxes) -- see the
+		// comment above MDLPreview_Load for why those are out of scope.
+		const MODEL_MAP = {
+			monster_army: 'progs/soldier.mdl',
+			monster_boss: 'progs/boss.mdl',
+			monster_demon1: 'progs/demon.mdl',
+			monster_dog: 'progs/dog.mdl',
+			monster_enforcer: 'progs/enforcer.mdl',
+			monster_fish: 'progs/fish.mdl',
+			monster_hell_knight: 'progs/hknight.mdl',
+			monster_knight: 'progs/knight.mdl',
+			monster_ogre: 'progs/ogre.mdl',
+			monster_ogre_marksman: 'progs/ogre.mdl',
+			monster_oldone: 'progs/oldone.mdl',
+			monster_shalrath: 'progs/shalrath.mdl',
+			monster_shambler: 'progs/shambler.mdl',
+			monster_tarbaby: 'progs/tarbaby.mdl',
+			monster_wizard: 'progs/wizard.mdl',
+			monster_zombie: 'progs/zombie.mdl',
+			weapon_shotgun: 'progs/g_shotgn.mdl',
+			weapon_supershotgun: 'progs/g_shot.mdl',
+			weapon_nailgun: 'progs/g_nail.mdl',
+			weapon_supernailgun: 'progs/g_nail2.mdl',
+			weapon_grenadelauncher: 'progs/g_rock.mdl',
+			weapon_rocketlauncher: 'progs/g_rock2.mdl',
+			weapon_lightning: 'progs/g_light.mdl',
+			item_armor1: 'progs/armor.mdl',
+			item_armor2: 'progs/armor.mdl',
+			item_armorInv: 'progs/armor.mdl',
+			item_backpack: 'progs/backpack.mdl',
+			item_artifact_invulnerability: 'progs/invul.mdl',
+			item_artifact_envirosuit: 'progs/suit.mdl',
+			item_artifact_invisibility: 'progs/invis.mdl',
+			item_artifact_super_damage: 'progs/quaddama.mdl'
+		};
+
+		// -------- turn recognized classnames into clickable spans --------
+		for ( const el of document.querySelectorAll( '.classnames[data-previewable="true"]' ) ) {
+
+			const names = el.textContent.split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
+			el.textContent = '';
+
+			names.forEach( ( name, i ) => {
+
+				if ( i > 0 ) el.append( ', ' );
+
+				if ( MODEL_MAP[ name ] ) {
+
+					const span = document.createElement( 'span' );
+					span.className = 'cn-link';
+					span.textContent = name;
+					span.dataset.model = MODEL_MAP[ name ];
+					span.dataset.name = name;
+					span.addEventListener( 'click', () => loadPreview( span ) );
+					el.append( span );
+
+				} else {
+
+					el.append( name );
+
+				}
+
+			} );
+
+		}
+
+		// -------- three.js viewer, one shared scene for every preview --------
+		const canvas = document.getElementById( 'preview-canvas' );
+		const viewport = document.getElementById( 'preview-viewport' );
+		const placeholder = document.getElementById( 'preview-placeholder' );
+		const label = document.getElementById( 'preview-label' );
+
+		const renderer = new THREE.WebGLRenderer( { canvas, antialias: true } );
+		renderer.setPixelRatio( Math.min( window.devicePixelRatio || 1, 2 ) );
+
+		const scene = new THREE.Scene();
+		scene.background = new THREE.Color( 0x0f0c0a );
+
+		const camera = new THREE.PerspectiveCamera( 40, 1, 1, 2000 );
+
+		scene.add( new THREE.AmbientLight( 0xffffff, 0.6 ) );
+		const keyLight = new THREE.DirectionalLight( 0xffffff, 1.1 );
+		keyLight.position.set( 60, 120, 90 );
+		scene.add( keyLight );
+		const fillLight = new THREE.DirectionalLight( 0xffffff, 0.5 );
+		fillLight.position.set( -80, 40, -60 );
+		scene.add( fillLight );
+
+		function resizeRenderer() {
+
+			const w = viewport.clientWidth;
+			const h = viewport.clientHeight;
+			if ( w === 0 || h === 0 ) return;
+			renderer.setSize( w, h, false );
+			camera.aspect = w / h;
+			camera.updateProjectionMatrix();
+
+		}
+
+		new ResizeObserver( resizeRenderer ).observe( viewport );
+		resizeRenderer();
+
+		let currentMesh = null;
+		let paksLoadedPromise = null;
+
+		function render() {
+
+			requestAnimationFrame( render );
+			if ( currentMesh ) currentMesh.rotation.y += 0.012;
+			renderer.render( scene, camera );
+
+		}
+
+		render();
+
+		async function loadPreview( span ) {
+
+			document.querySelectorAll( '.cn-link.active' ).forEach( ( s ) => s.classList.remove( 'active' ) );
+			span.classList.add( 'active' );
+
+			placeholder.textContent = 'Loading…';
+			placeholder.style.display = 'flex';
+			label.textContent = '';
+
+			try {
+
+				if ( ! paksLoadedPromise ) paksLoadedPromise = MDLPreview_LoadPaks( [ 'pak0.pak', 'pak1.pak' ] );
+				await paksLoadedPromise;
+
+				const result = MDLPreview_Load( span.dataset.model );
+				if ( ! result ) {
+
+					placeholder.textContent = 'Could not load ' + span.dataset.model;
+					return;
+
+				}
+
+				if ( currentMesh ) {
+
+					scene.remove( currentMesh );
+					currentMesh.geometry.dispose();
+					currentMesh.material.map.dispose();
+					currentMesh.material.dispose();
+
+				}
+
+				// DoubleSide: Quake's authored triangle winding doesn't match
+				// Three's front-face convention (the real engine handles this
+				// by reordering indices when building its strip/fan display
+				// lists -- see gl_mesh.js -- but this standalone loader keeps
+				// the raw triangle order, so render both faces instead).
+				const material = new THREE.MeshLambertMaterial( { map: result.texture, side: THREE.DoubleSide } );
+				currentMesh = new THREE.Mesh( result.geometry, material );
+				scene.add( currentMesh );
+
+				const dist = Math.max( result.radius * 2.2, 60 );
+				camera.position.set( dist * 0.6, dist * 0.35, dist * 0.9 );
+				camera.lookAt( 0, result.radius * 0.15, 0 );
+
+				placeholder.style.display = 'none';
+				label.textContent = span.dataset.name;
+
+			} catch ( e ) {
+
+				placeholder.textContent = 'Failed to load model';
+				console.error( e );
+
+			}
 
 		}
 

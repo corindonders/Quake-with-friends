@@ -158,9 +158,15 @@ export const CM_ANGLE2 = ( 1 << 7 );
 // QW-style delta compression for packet entities
 // Ported from: QW/client/protocol.h
 //
-// The first 16 bits of a packetentities update holds 10 bits
-// of entity number (max 1024, to support MAX_EDICTS=600) and
-// 6 bits of flags.
+// Originally (like the real QW protocol) the first 16 bits of a
+// packetentities update packed 10 bits of entity number (max 1024, to
+// support MAX_EDICTS=600) and 6 bits of flags into one short. Mods with
+// far more than 600 edicts in flight (Arcane Dimensions) need entity
+// numbers above 1023, so entity number and flags are now two separate
+// shorts -- see SV_WriteDelta in sv_main.js and the matching read side in
+// CL_ParsePacketEntities/CL_ParseDelta (cl_parse.js). PE_ENT_BITS/MASK are
+// kept only because the flag bit values below still start at bit 10 (no
+// functional reason to renumber them now that they don't share a word).
 //==============================================
 
 export const svc_packetentities = 47; // [...]
@@ -169,12 +175,11 @@ export const svc_serversequence = 49; // [long] server frame sequence number
 
 export const clc_delta = 5; // [byte] sequence number, requests delta compression
 
-// Entity number mask: 10 bits for entity number (0-1023)
 export const PE_ENT_BITS = 10;
-export const PE_ENT_MASK = ( 1 << PE_ENT_BITS ) - 1; // 0x3FF
+export const PE_ENT_MASK = ( 1 << PE_ENT_BITS ) - 1; // 0x3FF -- unused for packing now, see comment above
 
-// Packet entity U_* flags (upper 6 bits of the short, plus morebits byte)
-// Bits 10-15 of the first short:
+// Packet entity U_* flags (its own short now, no longer sharing bits 0-9
+// with the entity number -- see comment above). Bits 10-15 of that short:
 export const PE_ORIGIN1 = ( 1 << 10 );
 export const PE_ORIGIN2 = ( 1 << 11 );
 export const PE_ORIGIN3 = ( 1 << 12 );

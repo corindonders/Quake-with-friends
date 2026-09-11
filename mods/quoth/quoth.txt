@@ -1,0 +1,63 @@
+
+----------------------------
+Quoth
+----------------------------
+
+"Once upon a midnight dreary, while I pondered, weak and weary,
+Over many a quaint and curious volume of forgotten lore..."
+
+
+Quoth is an expansion pack for Quake 1 single player.
+It is not intended as a series of thematically connected maps with additional custom content, as other packs are. The intention is to provide quality custom content for Q1 mappers and players in a single pak file. There are maps included in the pak, but there are also larger maps using the content already released separately by both Kell and necros, and more maps will surely follow.
+
+Keep watching for new releases, to both the pak file content and individual maps, at either of the authors' websites or by visiting Func_Msgboard: http://celephais.net/board
+
+----------------------------
+Installation
+----------------------------
+
+Create a subfolder in your /quake directory called /quoth. Extract quoth.zip into it.
+All of the content is in pak0.pak Later updates will use the conventional pak1, pak2 etc. format.
+
+Note that when you run the pak, add to your quake engine command line:
+
+-hipnotic -game quoth
+
+and not simply -game quoth. This is to enable the Scourge Of Armagon HUD layout that we have utilized for our powerups and weapons. You do not need to have Scourge Of Armagon installed for this to work.
+
+We recommend FitzQuake as the engine of choice for playing Quoth: http://celephais.net/fitzquake
+
+----------------------------
+Thanks To:
+----------------------------
+
+RPG - playtesting
+Vondur - playtesting
+Gom - playtesting
+Bal - playtesting
+Kinn - playtesting
+Mindcrime - playtesting
+aguirRe - compilers
+czg - the hiprotate tutorial
+metlslime - FitzQuake
+Scampie - Spawnpoint
+
+----------------------------
+Legal Footplate
+----------------------------
+
+You may distribute this .zip file, without modifying its contents, via the internet or BBS systems.
+You may not distribute it via cover CD without the authors' prior permission.
+
+~n/K~
+
+( http://www.planetquake.com/necros )
+( http://kell.spawnpoint.org )
+
+November
+2005
+
+----------------------------
+
+"Nevermore!"
+

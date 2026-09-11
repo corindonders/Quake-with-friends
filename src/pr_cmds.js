@@ -495,7 +495,7 @@ function PF_ambientsound() {
 	for ( let i = 0; i < 3; i ++ )
 		MSG_WriteCoord( sv.signon, pos[ i ] );
 
-	MSG_WriteByte( sv.signon, soundnum );
+	MSG_WriteShort( sv.signon, soundnum ); // was WriteByte -- see MAX_SOUNDS in quakedef.js
 	MSG_WriteByte( sv.signon, ( vol * 255 ) | 0 );
 	MSG_WriteByte( sv.signon, ( attenuation * 64 ) | 0 );
 
@@ -1423,7 +1423,7 @@ function PF_makestatic() {
 	const ent = G_EDICT( OFS_PARM0 );
 
 	MSG_WriteByte( sv.signon, svc_spawnstatic );
-	MSG_WriteByte( sv.signon, ent.v.modelindex | 0 );
+	MSG_WriteShort( sv.signon, ent.v.modelindex | 0 ); // was WriteByte -- see MAX_MODELS in quakedef.js
 	MSG_WriteByte( sv.signon, ent.v.frame | 0 );
 	MSG_WriteByte( sv.signon, ent.v.colormap | 0 );
 	MSG_WriteByte( sv.signon, ent.v.skin | 0 );

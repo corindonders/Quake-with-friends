@@ -1,4 +1,4 @@
-// WebXR support for Three-Quake
+// WebXR support for Quake with Friends
 // Provides VR rendering via Three.js WebXR integration
 
 import * as THREE from 'three';

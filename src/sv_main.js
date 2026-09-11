@@ -34,7 +34,7 @@ import {
 	PF_MODEL, PF_SKINNUM, PF_EFFECTS, PF_WEAPONFRAME, PF_DEAD, PF_GIB,
 	CM_ANGLE1, CM_ANGLE2, CM_ANGLE3, CM_FORWARD, CM_SIDE, CM_UP, CM_BUTTONS, CM_IMPULSE,
 	svc_packetentities, svc_deltapacketentities, svc_serversequence,
-	PE_ENT_BITS, PE_ENT_MASK, PE_ORIGIN1, PE_ORIGIN2, PE_ORIGIN3,
+	PE_ORIGIN1, PE_ORIGIN2, PE_ORIGIN3,
 	PE_ANGLE2, PE_REMOVE, PE_MOREBITS,
 	PE_FRAME, PE_ANGLE1, PE_ANGLE3, PE_MODEL, PE_COLORMAP, PE_SKIN, PE_EFFECTS, PE_SOLID,
 	MAX_PACKET_ENTITIES, PE_UPDATE_MASK
@@ -232,7 +232,7 @@ export function SV_StartSound( entity, channel, sample, volume, attenuation ) {
 	if ( field_mask & 2 ) // SND_ATTENUATION
 		MSG_WriteByte( sv.datagram, ( attenuation * 64 ) | 0 );
 	MSG_WriteShort( sv.datagram, channel );
-	MSG_WriteByte( sv.datagram, sound_num );
+	MSG_WriteShort( sv.datagram, sound_num ); // was WriteByte -- see MAX_SOUNDS in quakedef.js
 	for ( let i = 0; i < 3; i ++ )
 		MSG_WriteCoord( sv.datagram, entity.v.origin[ i ] + 0.5 * ( entity.v.mins[ i ] + entity.v.maxs[ i ] ) );
 
@@ -683,21 +683,24 @@ function SV_WriteDelta( from, to, msg, force ) {
 	//
 	if ( to.number === 0 )
 		Sys_Error( 'SV_WriteDelta: unset entity number' );
-	if ( to.number > PE_ENT_MASK )
-		Sys_Error( 'SV_WriteDelta: entity number > ' + PE_ENT_MASK );
 
 	if ( bits === 0 && ! force )
 		return; // nothing to send!
 
-	const i = to.number | ( bits & ~PE_ENT_MASK );
-	if ( i & PE_REMOVE )
+	if ( bits & PE_REMOVE )
 		Sys_Error( 'SV_WriteDelta: PE_REMOVE' );
-	MSG_WriteShort( msg, i );
+	// Entity number and flags used to be packed into one short (10 bits +
+	// 6 bits -- see protocol.js), capping entity numbers at 1023. Mods with
+	// far more than MAX_EDICTS=600 in flight (Arcane Dimensions) need more,
+	// so these are now two separate shorts -- see the matching read side in
+	// CL_ParsePacketEntities/CL_ParseDelta (cl_parse.js).
+	MSG_WriteShort( msg, to.number );
+	MSG_WriteShort( msg, bits );
 
 	if ( bits & PE_MOREBITS )
 		MSG_WriteByte( msg, bits & 0xFF );
 	if ( bits & PE_MODEL )
-		MSG_WriteByte( msg, to.modelindex );
+		MSG_WriteShort( msg, to.modelindex ); // was WriteByte -- see MAX_MODELS in quakedef.js
 	if ( bits & PE_FRAME )
 		MSG_WriteByte( msg, to.frame );
 	if ( bits & PE_COLORMAP )
@@ -783,8 +786,10 @@ function SV_EmitPacketEntities( client, to, msg ) {
 
 		if ( newnum > oldnum ) {
 
-			// the old entity isn't present in the new message
-			MSG_WriteShort( msg, oldnum | PE_REMOVE );
+			// the old entity isn't present in the new message -- entnum and
+			// flags are two separate shorts now, see SV_WriteDelta above
+			MSG_WriteShort( msg, oldnum );
+			MSG_WriteShort( msg, PE_REMOVE );
 			oldindex ++;
 			continue;
 
@@ -1221,7 +1226,7 @@ function SV_WritePlayersToClient( client, clent, pvs, msg ) {
 		}
 
 		if ( pflags & PF_MODEL )
-			MSG_WriteByte( msg, ent.v.modelindex );
+			MSG_WriteShort( msg, ent.v.modelindex ); // was WriteByte -- see MAX_MODELS in quakedef.js
 
 		if ( pflags & PF_SKINNUM )
 			MSG_WriteByte( msg, ent.v.skin );
@@ -1569,7 +1574,7 @@ function SV_CreateBaseline() {
 		MSG_WriteByte( sv.signon, svc_spawnbaseline );
 		MSG_WriteShort( sv.signon, entnum );
 
-		MSG_WriteByte( sv.signon, svent.baseline.modelindex );
+		MSG_WriteShort( sv.signon, svent.baseline.modelindex ); // was WriteByte -- see MAX_MODELS in quakedef.js
 		MSG_WriteByte( sv.signon, svent.baseline.frame );
 		MSG_WriteByte( sv.signon, svent.baseline.colormap );
 		MSG_WriteByte( sv.signon, svent.baseline.skin );
@@ -1679,7 +1684,7 @@ export function SV_SpawnServer( server ) {
 	sv.reliable_datagram.data = sv.reliable_datagram_buf;
 	sv.reliable_datagram.allowoverflow = true; // will be copied to client reliables
 
-	sv.signon.maxsize = 8192;
+	sv.signon.maxsize = sv.signon_buf.length; // see server.js for why this isn't 8192 anymore
 	sv.signon.cursize = 0;
 	sv.signon.data = sv.signon_buf;
 

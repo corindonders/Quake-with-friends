@@ -1,4 +1,4 @@
-// Three-Quake Game Server for Deno
+// Quake with Friends Game Server for Deno
 // Uses the existing JavaScript game modules from src/
 //
 // Local dev:  deno run --allow-net --allow-read --config ../deno.json game_server.js
@@ -122,9 +122,9 @@ setInterval(() => {
 async function Host_Init_Server() {
 	Sys_Printf('========================================\n');
 	if (CONFIG.roomId !== null) {
-		Sys_Printf('Three-Quake Room Server [%s]\n', CONFIG.roomId);
+		Sys_Printf('Quake with Friends Room Server [%s]\n', CONFIG.roomId);
 	} else {
-		Sys_Printf('Three-Quake Game Server v1.0\n');
+		Sys_Printf('Quake with Friends Game Server v1.0\n');
 	}
 	Sys_Printf('========================================\n\n');
 

@@ -85,10 +85,10 @@ export const SURF_DRAWTILED = 0x20;
 export const SURF_DRAWBACKGROUND = 0x40;
 export const SURF_UNDERWATER = 0x80;
 
-// max dlights
+// max dlights -- keep in sync with client.js's own copy -- see its comment on why this isn't raised
 export const MAX_DLIGHTS = 32;
 export const MAXLIGHTMAPS = 4;
-export const MAX_VISEDICTS = 256;
+export const MAX_VISEDICTS = 2048;
 
 //============================================================================
 // Globals from gl_rmain.c
@@ -560,6 +560,7 @@ export function R_DrawEntitiesOnList() {
 			case mod_brush:
 				R_DrawBrushModel( currententity );
 				break;
+
 
 			default:
 				break;

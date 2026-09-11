@@ -575,7 +575,11 @@ export function SV_HullPointContents( hull, num, p ) {
 
 	while ( num >= 0 ) {
 
-		if ( num < hull.firstclipnode || num > hull.lastclipnode )
+		// See the matching comment in SV_RecursiveHullCheck above -- BSP2
+		// maps with deduped/shared clipnode subtrees (ericw-tools, large AD
+		// maps) can legitimately reference nodes outside [firstclipnode,
+		// lastclipnode], so only the array-bounds invariant is enforced.
+		if ( num >= hull.clipnodes.length )
 			Sys_Error( 'SV_HullPointContents: bad node number' );
 
 		const node = hull.clipnodes[ num ];
@@ -685,8 +689,20 @@ export function SV_RecursiveHullCheck( hull, num, p1f, p2f, p1, p2, trace, depth
 
 	}
 
-	if ( num < hull.firstclipnode || num > hull.lastclipnode )
-		Sys_Error( 'SV_RecursiveHullCheck: bad node number' );
+	// hull.firstclipnode/lastclipnode bound each model's own clipnode
+	// subtree in vanilla-compiled BSPs, where every model's nodes are a
+	// separate contiguous block. Modern BSP2 compilers (ericw-tools, used
+	// for large Arcane Dimensions maps) can dedupe/share identical clipnode
+	// subtrees across models to shrink huge files, so a child reference can
+	// legitimately point below a model's own firstclipnode into a shared
+	// subtree compiled earlier -- confirmed on ad_azad (submodel *89, hull
+	// 2): real gameplay traversal reaches node indices well outside
+	// [firstclipnode, lastclipnode] on every run, at different indices
+	// depending on the exact movement path, which rules out static data
+	// corruption. The only invariant that still has to hold is that `num`
+	// is a valid index into the hull's own (shared) clipnodes array.
+	if ( num < 0 || num >= hull.clipnodes.length )
+		Sys_Error( 'SV_RecursiveHullCheck: bad node number (num=' + num + ', numclipnodes=' + ( hull.clipnodes ? hull.clipnodes.length : -1 ) + ')' );
 
 	//
 	// find the point distances

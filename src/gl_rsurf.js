@@ -2,6 +2,8 @@
 
 import * as THREE from 'three';
 import { Sys_Error } from './sys.js';
+import { r_textureatlas } from './glquake.js';
+import { GL_BuildTextureAtlas, GL_RemapUVsToAtlasRect, GL_UVInRange } from './gl_texatlas.js';
 
 function createQuakeLightmapMaterial( diffuseMap, lightmapTex ) {
 
@@ -27,7 +29,35 @@ function createQuakeLightmapMaterial( diffuseMap, lightmapTex ) {
 
 	}
 
+	// Masked ('{'-prefixed) textures (fences, grates, foliage, ...) have
+	// palette index 255 cut to alpha=0 by GL_LoadTexture -- alphaTest (not
+	// blending) so depth-sorting stays correct against the rest of the
+	// world, matching how id's own glquake handled these.
+	if ( diffuseMap._masked === true ) {
+
+		matOptions.alphaTest = 0.5;
+		matOptions.side = THREE.DoubleSide;
+
+	}
+
 	return new THREE.MeshLambertMaterial( matOptions );
+
+}
+
+// Fallback for surfaces with no lightmap (sky/turb already branch off
+// elsewhere before reaching this) -- still needs the same masked-texture
+// alpha cutout as the lightmapped path above.
+function createQuakeBasicMaterial( diffuseMap ) {
+
+	const matOptions = { map: diffuseMap };
+	if ( diffuseMap && diffuseMap._masked === true ) {
+
+		matOptions.alphaTest = 0.5;
+		matOptions.side = THREE.DoubleSide;
+
+	}
+
+	return new THREE.MeshBasicMaterial( matOptions );
 
 }
 import { cl, cl_dlights, MAX_DLIGHTS, MAX_VISEDICTS, cl_visedicts, cl_numvisedicts, set_cl_numvisedicts } from './client.js';
@@ -66,8 +96,24 @@ import { R_SkyboxActive } from './gl_skybox.js';
 // Constants
 //============================================================================
 
-export const BLOCK_WIDTH = 256;
-export const BLOCK_HEIGHT = 256;
+// Was 256, then 512 (vanilla GLQuake used 128) -- Arcane Dimensions' large
+// open maps have individual surfaces whose lightmapped extents need more
+// than a narrower atlas page can hold (smax/tmax > BLOCK_WIDTH fails
+// AllocBlock below); ad_lavatomb (extents=4384) and ad_azad (extents=8448)
+// both exceeded 512 in testing. Only pages actually used by a map get
+// uploaded as GPU textures (see the "upload all lightmaps" loop below), so
+// this only costs CPU-side RAM for the shared `lightmaps` buffer up front,
+// not GPU memory on small maps. See the matching CalcSurfaceExtents cap in
+// gl_model.js.
+export const BLOCK_WIDTH = 1024;
+export const BLOCK_HEIGHT = 1024;
+// AD's very largest maps (e.g. ad_lavatomb, ~72k faces) can still exhaust
+// this many pages even at the larger BLOCK_WIDTH/HEIGHT above -- that needs
+// a more fundamental (dynamically-growable page count) fix, not just a
+// bigger constant here, so this stays at vanilla's page count rather than
+// paying a bigger fixed memory cost (4 bytes * MAX_LIGHTMAPS * BLOCK_WIDTH *
+// BLOCK_HEIGHT, allocated up front for every map) for a bump that alone
+// doesn't fix the case it'd be raised for.
 export const MAX_LIGHTMAPS = 64;
 
 const GL_LUMINANCE = 0x1909;
@@ -205,6 +251,11 @@ const worldBatchedMeshes = [];
 // Animated materials within the cached world batches.
 const worldAnimatedMeshes = [];
 
+// Texture atlas pages built for the current map (see gl_texatlas.js) --
+// tracked separately so they can be disposed on map change; a material's
+// own .dispose() doesn't dispose its .map texture.
+let worldAtlasPages = [];
+
 // Pre-allocated scratch arrays to avoid per-frame allocations
 const _cullBoxMaxs = new Float32Array( 3 ); // for R_CullBox in R_RecursiveWorldNode
 
@@ -266,12 +317,22 @@ function _getWaterMaterial( t, opacity ) {
 		// as an emissive base keeps water visible everywhere like it always
 		// was, while the Lambert diffuse term still adds extra brightening
 		// from nearby dlights on top of that.
+		//
+		// Some liquids (lava, in particular) are fullbright-split textures
+		// (see createQuakeLightmapMaterial's _fullbright handling): the
+		// diffuse map has its glowing pixels zeroed out to black, with a
+		// separate _fullbright texture holding just those pixels at full
+		// intensity. Lava is 100% fullbright pixels, so using the diffuse
+		// map as the emissive base (as if it were plain unsplit water)
+		// rendered it as solid black. Prefer _fullbright for the emissive
+		// layer when present; fall back to the diffuse map otherwise.
 		const waterTexture = ( t && t.gl_texture ) ? t.gl_texture : null;
+		const emissiveTexture = waterTexture ? ( waterTexture._fullbright || waterTexture ) : null;
 		material = new THREE.MeshLambertMaterial( {
 			map: waterTexture,
 			color: waterTexture ? 0xffffff : 0x406080,
-			emissiveMap: waterTexture,
-			emissive: waterTexture ? 0xffffff : 0x406080,
+			emissiveMap: emissiveTexture,
+			emissive: emissiveTexture ? 0xffffff : 0x406080,
 			emissiveIntensity: 0.7,
 			transparent: true,
 			opacity: opacity,
@@ -1518,7 +1579,7 @@ export function R_DrawBrushModel( e ) {
 
 					material = ( diffuse != null && lmTex != null )
 						? createQuakeLightmapMaterial( diffuse, lmTex )
-						: new THREE.MeshBasicMaterial( { map: diffuse } );
+						: createQuakeBasicMaterial( diffuse );
 					_brushMaterialCache.set( matKey, material );
 
 				}
@@ -1588,7 +1649,7 @@ export function R_DrawBrushModel( e ) {
 
 				material = ( diffuse && anim.lmTex )
 					? createQuakeLightmapMaterial( diffuse, anim.lmTex )
-					: new THREE.MeshBasicMaterial( { map: diffuse } );
+					: createQuakeBasicMaterial( diffuse );
 				_brushMaterialCache.set( matKey, material );
 
 			}
@@ -2559,13 +2620,15 @@ function R_BuildWorldMeshes() {
 
 	}
 
-	// First pass: collect geometry data per (texture, lightmap)
-	// Each surface stores its geometry and ALL leaves that contain it
-	// Structure: batchGroups: Map<texKey, { texture, lmNum, totalVerts, totalGeoms, surfaceData: Array<{geom, leaves}> }>
-	const batchGroups = new Map();
-
+	// First pass: build each surface's geometry and figure out which
+	// texture it uses, without grouping yet -- grouping needs the texture
+	// atlas (if enabled) built first, since atlased surfaces group by
+	// atlas page instead of by their original individual texture.
 	const surfStart = worldmodel.firstmodelsurface || 0;
 	const surfEnd = surfStart + ( worldmodel.nummodelsurfaces || worldmodel.numsurfaces );
+
+	const collected = []; // { t, lmNum, geom, leaves }
+	const atlasCandidates = new Set();
 
 	for ( let k = surfStart; k < surfEnd; k ++ ) {
 
@@ -2602,14 +2665,46 @@ function R_BuildWorldMeshes() {
 		const geom = DrawGLPoly( surf.polys, planeNormal );
 		if ( ! geom ) continue;
 
-		const lmNum = surf.lightmaptexturenum;
-		const texKey = ( t._buildId || ( t._buildId = Math.random() ) ) + '_' + lmNum;
+		collected.push( { t, lmNum: surf.lightmaptexturenum, geom, leaves } );
 
-		if ( ! batchGroups.has( texKey ) ) {
+		// Animated textures can't be atlased (see gl_texatlas.js) -- only
+		// offer static ones up as atlas candidates.
+		if ( ! t.anim_total && GL_UVInRange( geom ) ) atlasCandidates.add( t.gl_texture );
 
-			batchGroups.set( texKey, {
+	}
+
+	const atlas = r_textureatlas.value ? GL_BuildTextureAtlas( atlasCandidates ) : null;
+	if ( atlas ) worldAtlasPages = atlas.pages;
+
+	// Second pass: group by (atlas page, lightmap) when a surface's texture
+	// made it into the atlas, otherwise fall back to the original
+	// (individual texture, lightmap) grouping exactly as before.
+	// Structure: batchGroups: Map<key, { texture, atlasPageTex, lmNum, totalVerts, totalGeoms, surfaceData: Array<{geom, leaves}> }>
+	const batchGroups = new Map();
+
+	for ( const { t, lmNum, geom, leaves } of collected ) {
+
+		const rect = atlas ? atlas.rectFor( t.gl_texture ) : null;
+		let key, atlasPageTex = null;
+
+		if ( rect ) {
+
+			GL_RemapUVsToAtlasRect( geom, rect );
+			atlasPageTex = atlas.pages[ rect.page ];
+			key = 'atlas_' + rect.page + '_' + lmNum;
+
+		} else {
+
+			key = ( t._buildId || ( t._buildId = Math.random() ) ) + '_' + lmNum;
+
+		}
+
+		if ( ! batchGroups.has( key ) ) {
+
+			batchGroups.set( key, {
 				texture: t,
-				lmNum: lmNum,
+				atlasPageTex,
+				lmNum,
 				totalVerts: 0,
 				totalGeoms: 0,
 				surfaceData: []
@@ -2617,28 +2712,42 @@ function R_BuildWorldMeshes() {
 
 		}
 
-		const group = batchGroups.get( texKey );
+		const group = batchGroups.get( key );
 		const vertCount = geom.getAttribute( 'position' ).count;
 
 		group.totalVerts += vertCount;
 		group.totalGeoms ++;
-		group.surfaceData.push( { geom: geom, leaves: leaves } );
+		group.surfaceData.push( { geom, leaves } );
 
 	}
 
 	// Identity matrix for all geometries (already in world space)
 	const identityMatrix = new THREE.Matrix4();
 
-	// Second pass: create BatchedMesh for each (texture, lightmap) group
+	// Third pass: create BatchedMesh for each (atlas page or texture, lightmap) group
 	for ( const [ texKey, group ] of batchGroups ) {
 
 		const t = group.texture;
-		const animTex = R_TextureAnimation( t, 0 );
-		const diffuse = animTex != null && animTex.gl_texture != null ? animTex.gl_texture : t.gl_texture;
+		let diffuse;
+
+		if ( group.atlasPageTex ) {
+
+			// Atlased surfaces are static by construction (see the
+			// anim_total check above), so there's no per-frame animated
+			// texture lookup to do here.
+			diffuse = group.atlasPageTex;
+
+		} else {
+
+			const animTex = R_TextureAnimation( t, 0 );
+			diffuse = animTex != null && animTex.gl_texture != null ? animTex.gl_texture : t.gl_texture;
+
+		}
+
 		const lmTex = lightmapTextures[ group.lmNum ];
 		const material = lmTex
 			? createQuakeLightmapMaterial( diffuse, lmTex )
-			: new THREE.MeshBasicMaterial( { map: diffuse } );
+			: createQuakeBasicMaterial( diffuse );
 
 		// Create BatchedMesh with capacity for all geometries in this group
 		const batchedMesh = new THREE.BatchedMesh(
@@ -2649,7 +2758,7 @@ function R_BuildWorldMeshes() {
 		);
 
 		// Name for debugging (texture name + lightmap number)
-		const texName = t.name || '';
+		const texName = group.atlasPageTex ? 'atlas' : ( t.name || '' );
 		batchedMesh.name = `world_${texName}_lm${group.lmNum}`;
 
 		if ( material.isMeshLambertMaterial ) {
@@ -2682,7 +2791,10 @@ function R_BuildWorldMeshes() {
 
 		worldGroup.add( batchedMesh );
 		worldBatchedMeshes.push( batchedMesh );
-		if ( t.anim_total > 0 )
+		// Atlased groups are never animated (see the anim_total check when
+		// building atlasCandidates above), so t here wouldn't even be
+		// representative of the whole page -- skip the check entirely.
+		if ( ! group.atlasPageTex && t.anim_total > 0 )
 			worldAnimatedMeshes.push( { mesh: batchedMesh, baseTexture: t } );
 
 	}
@@ -2755,6 +2867,9 @@ export function GL_BuildLightmaps() {
 
 	worldBatchedMeshes.length = 0;
 	worldAnimatedMeshes.length = 0;
+
+	for ( const page of worldAtlasPages ) page.dispose();
+	worldAtlasPages = [];
 
 	// Dispose any other children in worldGroup (water/sky meshes added dynamically)
 	if ( worldGroup ) {

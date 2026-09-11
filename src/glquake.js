@@ -247,6 +247,11 @@ export const r_mirroralpha = { name: 'r_mirroralpha', string: '1', value: 1 };
 export const r_wateralpha = { name: 'r_wateralpha', string: '1', value: 1 };
 export const r_dynamic = { name: 'r_dynamic', string: '1', value: 1 };
 export const r_novis = { name: 'r_novis', string: '0', value: 0 };
+// Packs eligible world diffuse textures into shared atlas pages so surfaces
+// that used to need separate materials (and thus separate draw calls) can
+// share one -- see gl_texatlas.js for exactly which textures qualify.
+// Defaults off until it's had more real-world mileage; see R_BuildWorldMeshes.
+export const r_textureatlas = { name: 'r_textureatlas', string: '0', value: 0, archive: true };
 
 export const gl_clear = { name: 'gl_clear', string: '0', value: 0 };
 export const gl_cull = { name: 'gl_cull', string: '1', value: 1 };

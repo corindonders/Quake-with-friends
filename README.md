@@ -1,4 +1,4 @@
-# three-quake
+# Quake with Friends
 
 A port of Quake to Three.js — this fork turns it into a small
 login-gated multiplayer server for a private friend group: accounts,

@@ -22,6 +22,7 @@ import { SV_Init, SV_CheckForNewClients, SV_ClearDatagram,
 	SV_SendClientMessages, SV_DropClient } from './sv_main.js';
 import { SV_RunClients } from './sv_user.js';
 import { SV_Physics, SV_SetFrametime, sv_gravity } from './sv_phys.js';
+import { Horde_Think } from './horde.js';
 import { sv, svs, client_t,
 	host_client, set_host_client } from './server.js';
 import { R_Init, D_FlushCaches } from './gl_rmisc.js';
@@ -227,8 +228,8 @@ export async function Host_Init( parms ) {
 	Chase_Init();
 	Host_InitLocal();
 
-	Con_Printf( 'Three-Quake Version 1.09\n' );
-	Con_Printf( 'Exe: three-quake (JavaScript/Three.js)\n' );
+	Con_Printf( 'Quake with Friends Version 1.09\n' );
+	Con_Printf( 'Exe: quake-with-friends (JavaScript/Three.js)\n' );
 
 	// W_LoadWadFile("gfx.wad") - load from pak
 	const wadData = COM_LoadFile( 'gfx.wad' );
@@ -471,8 +472,12 @@ export function Host_ServerFrame() {
 
 	// move things around and think
 	// always pause in single player if in console or menus
-	if ( ! sv.paused && ( svs.maxclients > 1 || key_dest === key_game ) )
+	if ( ! sv.paused && ( svs.maxclients > 1 || key_dest === key_game ) ) {
+
 		SV_Physics();
+		Horde_Think();
+
+	}
 
 	// send all messages to the clients
 	SV_SendClientMessages();

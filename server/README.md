@@ -1,6 +1,6 @@
-# Three-Quake Dedicated Server
+# Quake with Friends Dedicated Server
 
-A dedicated server for Three-Quake that runs headlessly using Deno and
+A dedicated server for Quake with Friends that runs headlessly using Deno and
 WebSocket.
 
 ## Requirements
@@ -205,7 +205,7 @@ deno run --allow-net --allow-read main.ts -port 4433 -map e1m1 -maxclients 8
 
 ## Connecting from Browser
 
-In the Three-Quake browser client, use the `connect` command:
+In the Quake with Friends browser client, use the `connect` command:
 
 ```
 connect wts://your-server.com:4433
@@ -254,8 +254,8 @@ CMD ["deno", "run", "--allow-net", "--allow-read", "server/main.ts"]
 Build and run:
 
 ```bash
-docker build -t three-quake-server .
-docker run -p 4433:4433 -v /path/to/certs:/app/server three-quake-server
+docker build -t quake-with-friends-server .
+docker run -p 4433:4433 -v /path/to/certs:/app/server quake-with-friends-server
 ```
 
 ## Architecture

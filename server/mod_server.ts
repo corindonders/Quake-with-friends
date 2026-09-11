@@ -164,7 +164,9 @@ export class model_t {
 // Model cache
 const mod_known: model_t[] = [];
 let mod_numknown = 0;
-const MAX_MOD_KNOWN = 512;
+// Keep in sync with gl_model.js's own copy -- see its comment for why this
+// was raised from vanilla's 512.
+const MAX_MOD_KNOWN = 4096;
 
 // Currently loading model
 let loadmodel: model_t | null = null;

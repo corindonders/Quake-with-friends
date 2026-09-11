@@ -9,12 +9,21 @@ import { MAX_PACKET_ENTITIES } from './protocol.js';
 
 export const SIGNONS = 4; // signon messages to receive before connected
 
+// MAX_DLIGHTS stays at 32 -- surf.dlightbits (gl_rlight.js/gl_rsurf.js) packs
+// it into a 32-bit bitmask via "1 << lnum", so raising this needs a wider
+// bitmask representation too, not just a bigger array. Not something we've
+// actually hit yet, so leaving it alone rather than risk subtly-wrong
+// lighting for dlights past index 31.
+//
+// The rest are pure client-side array sizes, no protocol implications.
+// Raised from vanilla's 24/640/64/128/256 -- mods with much busier scenes
+// (Arcane Dimensions) need more headroom than 1996-era maps did.
 export const MAX_DLIGHTS = 32;
-export const MAX_BEAMS = 24;
-export const MAX_EFRAGS = 640;
-export const MAX_TEMP_ENTITIES = 64; // lightning bolts, etc
-export const MAX_STATIC_ENTITIES = 128; // torches, etc
-export const MAX_VISEDICTS = 256;
+export const MAX_BEAMS = 64;
+export const MAX_EFRAGS = 4096;
+export const MAX_TEMP_ENTITIES = 512; // lightning bolts, etc
+export const MAX_STATIC_ENTITIES = 4096;
+export const MAX_VISEDICTS = 2048;
 
 export const MAX_MAPSTRING = 2048;
 export const MAX_DEMOS = 8;

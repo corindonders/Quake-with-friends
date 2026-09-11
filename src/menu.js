@@ -2251,7 +2251,7 @@ function M_Menu_Credits_f() {
 
 function M_Credits_Draw() {
 
-	M_DrawTextBox( 0, 0, 38, 23 );
+	M_DrawTextBox( 0, 0, 38, 26 );
 	M_PrintWhite( 16, 12, '  Quake version 1.09 by id Software\n' );
 	M_PrintWhite( 16, 28, 'Programming        Art \n' );
 	M_Print( 16, 36, ' John Carmack       Adrian Carmack\n' );
@@ -2267,8 +2267,10 @@ function M_Credits_Draw() {
 	M_Print( 16, 132, ' Barrett Alexander  Shawn Green\n' );
 	M_PrintWhite( 16, 148, 'JavaScript port\n' );
 	M_Print( 16, 156, ' mrdoob + claude + codex\n' );
-	M_PrintWhite( 16, 172, 'Source code\n' );
-	M_Print( 16, 180, ' github.com/mrdoob/three-quake\n' );
+	M_PrintWhite( 16, 164, 'This hub run by\n' );
+	M_Print( 16, 172, ' Corin\n' );
+	M_PrintWhite( 16, 188, 'Source code\n' );
+	M_Print( 16, 196, ' github.com/mrdoob/three-quake\n' );
 
 }
 
@@ -2289,7 +2291,7 @@ function M_Credits_Key( key ) {
 
 function M_Credits_Touch( vx, vy ) {
 
-	if ( vy >= 172 ) {
+	if ( vy >= 188 ) {
 
 		M_OpenCreditsSource();
 		return;
@@ -2336,9 +2338,11 @@ function M_Quit_Key( key ) {
 
 		case 121: // 'y'
 		case 89: // 'Y'
-			// Navigate to the project page
-			window.open( 'https://x.com/mrdoob/status/2015076521531355583', '_blank' );
-			M_Menu_Main_f();
+			// Browsers won't let a page close its own tab unless the page
+			// itself opened it, so "quit" instead disconnects and sends the
+			// player back to the game's own landing page.
+			Cbuf_AddText( 'disconnect\n' );
+			if ( typeof window !== 'undefined' ) window.location.href = 'start.html';
 			break;
 
 	}

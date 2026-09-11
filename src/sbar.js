@@ -4,6 +4,7 @@ import { Cmd_AddCommand } from './cmd.js';
 import { realtime } from './host.js';
 import { Con_Printf } from './console.js';
 import { Draw_GetVirtualWidth, Draw_GetVirtualHeight } from './gl_draw.js';
+import { cvar_t, Cvar_RegisterVariable } from './cvar.js';
 import {
 	IT_SHOTGUN, IT_SUPER_SHOTGUN, IT_NAILGUN, IT_SUPER_NAILGUN,
 	IT_GRENADE_LAUNCHER, IT_ROCKET_LAUNCHER, IT_LIGHTNING, IT_SUPER_LIGHTNING,
@@ -38,6 +39,15 @@ export const SBAR_HEIGHT = 24;
 const STAT_MINUS = 10; // num frame for '-' stats digit
 
 const GAME_DEATHMATCH = 1;
+
+// Corner-anchored "modern" HUD (face/health/armor bottom-left, ammo/keys/
+// powerups bottom-right), replicating the layout of whipowill's CSQC
+// "2021 rerelease"-style HUD mod (mods/quake-mod-hud) natively -- that mod
+// itself requires CSQC support this engine doesn't have, but its layout
+// logic is simple enough to reproduce directly against the existing sbar
+// pics and virtual-coordinate Draw_* primitives, working with every mod
+// automatically instead of needing a mod-specific csprogs.dat.
+export const cl_modernhud = new cvar_t( 'cl_modernhud', '0', true );
 
 /*
 ==============================================================================
@@ -268,6 +278,7 @@ export function Sbar_Init() {
 
 	Cmd_AddCommand( '+showscores', Sbar_ShowScores );
 	Cmd_AddCommand( '-showscores', Sbar_DontShowScores );
+	Cvar_RegisterVariable( cl_modernhud );
 
 	sb_sbar = _Draw_PicFromWad( 'sbar' );
 	sb_ibar = _Draw_PicFromWad( 'ibar' );
@@ -787,6 +798,158 @@ function Sbar_DrawAmmo() {
 
 /*
 ===============
+_DrawLargeValue
+
+Draws a numeric value using the 24px sb_nums digit pics at raw virtual
+coordinates (no classic-bar 320-centering offset). justify: 'left' or
+'right'. color: 0 = white, 1 = red (the "low value" variant).
+===============
+*/
+function _DrawLargeValue( x, y, value, justify, color ) {
+
+	if ( ! _Draw_Pic ) return;
+
+	if ( value < 0 ) value = 0;
+	if ( value > 999 ) value = 999;
+
+	const str = String( Math.floor( value ) );
+	if ( justify === 'right' ) x -= str.length * 24;
+
+	for ( let i = 0; i < str.length; i ++ ) {
+
+		const frame = sb_nums[ color ] ? sb_nums[ color ][ str.charCodeAt( i ) - 48 ] : null;
+		_Draw_Pic( x + i * 24, y, frame );
+
+	}
+
+}
+
+/*
+===============
+Sbar_DrawModern
+
+Corner-anchored HUD: face+health (bottom-left), armor above it when
+carried, ammo icon+count (bottom-right), keys/powerups/sigils stacked
+above the ammo icon. See cl_modernhud above for why this exists.
+===============
+*/
+function Sbar_DrawModern() {
+
+	if ( ! _Draw_Pic ) return;
+
+	const vw = _vid.width;
+	const vh = _vid.height;
+	const picsize = 24;
+	const iconsize = 16;
+	const buffer = 2;
+
+	// -------- bottom-left: face, health, armor --------
+	let px = picsize;
+	let py = vh - picsize * 1.5;
+
+	let face;
+	if ( ( _cl.items & ( IT_INVISIBILITY | IT_INVULNERABILITY ) ) === ( IT_INVISIBILITY | IT_INVULNERABILITY ) )
+		face = sb_face_invis_invuln;
+	else if ( _cl.items & IT_QUAD )
+		face = sb_face_quad;
+	else if ( _cl.items & IT_INVISIBILITY )
+		face = sb_face_invis;
+	else if ( _cl.items & IT_INVULNERABILITY )
+		face = sb_face_invuln;
+	else {
+
+		let f = Math.floor( _cl.stats[ STAT_HEALTH ] / 20 );
+		if ( f < 0 ) f = 0;
+		if ( f > 4 ) f = 4;
+		const anim = _cl.time <= _cl.faceanimtime ? 1 : 0;
+		face = sb_faces[ f ][ anim ];
+
+	}
+
+	_Draw_Pic( px, py, face );
+	_DrawLargeValue( px + picsize * 1.5, py, _cl.stats[ STAT_HEALTH ], 'left', _cl.stats[ STAT_HEALTH ] <= 25 ? 1 : 0 );
+
+	if ( _cl.items & ( IT_INVULNERABILITY | IT_ARMOR1 | IT_ARMOR2 | IT_ARMOR3 ) ) {
+
+		py -= picsize + buffer * 2;
+
+		let armorVal = _cl.stats[ STAT_ARMOR ];
+		if ( _cl.items & IT_INVULNERABILITY ) {
+
+			armorVal = 999;
+
+		} else if ( _cl.items & IT_ARMOR3 ) {
+
+			_Draw_Pic( px, py, sb_armor[ 2 ] );
+
+		} else if ( _cl.items & IT_ARMOR2 ) {
+
+			_Draw_Pic( px, py, sb_armor[ 1 ] );
+
+		} else if ( _cl.items & IT_ARMOR1 ) {
+
+			_Draw_Pic( px, py, sb_armor[ 0 ] );
+
+		}
+
+		_DrawLargeValue( px + picsize * 1.5, py, armorVal, 'left', armorVal <= 25 ? 1 : 0 );
+
+	}
+
+	// -------- bottom-right: ammo, keys/powerups, sigils --------
+	px = vw - picsize * 2;
+	py = vh - picsize * 1.5;
+
+	let ammoPic = null;
+	if ( _cl.items & IT_SHELLS ) ammoPic = sb_ammo[ 0 ];
+	else if ( _cl.items & IT_NAILS ) ammoPic = sb_ammo[ 1 ];
+	else if ( _cl.items & IT_ROCKETS ) ammoPic = sb_ammo[ 2 ];
+	else if ( _cl.items & IT_CELLS ) ammoPic = sb_ammo[ 3 ];
+	if ( ammoPic ) _Draw_Pic( px, py, ammoPic );
+
+	_DrawLargeValue( px - picsize * 0.5, py, _cl.stats[ STAT_AMMO ], 'right', _cl.stats[ STAT_AMMO ] <= 10 ? 1 : 0 );
+
+	// sigils (episode 4 runes), stacked leftward from the ammo column
+	let activebuttons = 0;
+	const sigilX = vw - picsize * 2 + picsize;
+	const sigilY = py - buffer * 2 - iconsize;
+	const sigilFlags = [ IT_SIGIL4, IT_SIGIL3, IT_SIGIL2, IT_SIGIL1 ];
+	const sigilPics = [ sb_sigil[ 3 ], sb_sigil[ 2 ], sb_sigil[ 1 ], sb_sigil[ 0 ] ];
+	for ( let i = 0; i < 4; i ++ ) {
+
+		if ( _cl.items & sigilFlags[ i ] ) {
+
+			activebuttons ++;
+			_Draw_Pic( sigilX - 8 * activebuttons, sigilY, sigilPics[ i ] );
+
+		}
+
+	}
+
+	// keys/powerups, stacked upward above the ammo column
+	activebuttons = activebuttons > 0 ? 1 : 0;
+	const stackX = vw - picsize * 2 + picsize - iconsize;
+	const stackYBase = py - buffer * 4;
+	const powerups = [
+		[ IT_KEY1, sb_items[ 0 ] ], [ IT_KEY2, sb_items[ 1 ] ],
+		[ IT_INVISIBILITY, sb_items[ 2 ] ], [ IT_INVULNERABILITY, sb_items[ 3 ] ],
+		[ IT_SUIT, sb_items[ 4 ] ], [ IT_QUAD, sb_items[ 5 ] ]
+	];
+	for ( const [ flag, pic ] of powerups ) {
+
+		if ( _cl.items & flag ) {
+
+			activebuttons ++;
+			_Draw_Pic( stackX, stackYBase - ( iconsize + buffer ) * activebuttons + buffer, pic );
+
+		}
+
+	}
+
+}
+
+/*
+===============
 Sbar_Draw
 ===============
 */
@@ -808,6 +971,10 @@ export function Sbar_Draw() {
 		Sbar_DrawPic( 0, 0, sb_scorebar );
 		Sbar_DrawScoreboard();
 		sb_updates = 0;
+
+	} else if ( sb_lines > 0 && cl_modernhud.value ) {
+
+		Sbar_DrawModern();
 
 	} else if ( sb_lines > 0 ) {
 

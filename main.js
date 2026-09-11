@@ -1,4 +1,4 @@
-// Three-Quake entry point
+// Quake with Friends entry point
 // Equivalent to WinQuake/sys_win.c WinMain() + main()
 
 import { Sys_Init, Sys_Printf, Sys_Error } from './src/sys.js';
@@ -225,7 +225,7 @@ async function main() {
 
 	} catch ( e ) {
 
-		console.error( 'Three-Quake Fatal Error:', e );
+		console.error( 'Quake with Friends Fatal Error:', e );
 		Sys_Error( e.message );
 
 	}

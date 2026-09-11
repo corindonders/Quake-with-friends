@@ -126,6 +126,274 @@
 			"mod": "Fantasy Quake",
 			"blurb": "Standalone RPG total-conversion with player classes, spells, and a grappling hook.",
 			"layers": [ "mods/fq" ]
+		},
+
+		"quoth_start": {
+			"title": "A Stranger Place Than This",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "Quoth's own start map. Renamed from the mod's \"start.bsp\" to avoid clashing with our hub's map key -- a loose copy in mods/quoth/maps/, the original pak content is untouched.",
+			"layers": [ "mods/quoth" ]
+		},
+		"e1m1quoth": {
+			"title": "The Slipgate Triplex",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "A Quoth-ified remix of The Slipgate Complex, showing off the mod's new monsters and entities.",
+			"layers": [ "mods/quoth" ]
+		},
+		"e1m2quoth": {
+			"title": "Remix Of The Damned",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "A Quoth remix of Castle of the Damned.",
+			"layers": [ "mods/quoth" ]
+		},
+		"kellbase1": {
+			"title": "Base Matter",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "By Kell. A Quoth base-themed showcase map.",
+			"layers": [ "mods/quoth" ]
+		},
+		"kellbase1_fan": {
+			"title": "Base Matter (Fan Edit)",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "By Kell. A fan-edited variant of Base Matter.",
+			"layers": [ "mods/quoth" ]
+		},
+		"ne_basetest": {
+			"title": "Jump in...",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "A small Quoth base-entity test map.",
+			"layers": [ "mods/quoth" ]
+		},
+		"breakable": {
+			"title": "Break Stuff",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "A test map for Quoth's breakable geometry.",
+			"layers": [ "mods/quoth" ]
+		},
+		"kelltest1": {
+			"title": "Slime Machine",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "By Kell. A Quoth entity showcase map.",
+			"layers": [ "mods/quoth" ]
+		},
+		"kelltest2": {
+			"title": "Birth Machine",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "By Kell. A Quoth entity showcase map.",
+			"layers": [ "mods/quoth" ]
+		},
+		"kelltest3": {
+			"title": "All The Men Of The Earth Shall Quake",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "By Kell. A Quoth entity showcase map.",
+			"layers": [ "mods/quoth" ]
+		},
+		"kelltest4": {
+			"title": "diary of a gug fiend",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "By Kell. A Quoth entity showcase map.",
+			"layers": [ "mods/quoth" ]
+		},
+		"kelltest5": {
+			"title": "Edie And The Sentinels",
+			"category": "mod",
+			"mod": "Quoth",
+			"blurb": "By Kell. A Quoth entity showcase map.",
+			"layers": [ "mods/quoth" ]
+		},
+
+		"ad_start": {
+			"title": "Hodgepodge of Themes and Portals",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan. AD's own hub map, renamed from \"start.bsp\" to avoid clashing with our own hub -- a loose copy in mods/ad/maps/, the original pak content is untouched. Large and open; runs noticeably slower than AD's smaller maps on this engine (~17fps measured).",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_dm1": {
+			"title": "Place of Many Deaths",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Gavin Edgington. Deathmatch. Runs well on this engine (~80fps measured).",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_crucial": {
+			"title": "Crucial Error",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Maik Franz Xaver. Lava caves and an industrial complex.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_lavatomb": {
+			"title": "Lava Tomb",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Noel Lacaillade. A stone city gradually sinking into lava. One of AD's largest maps (~72k faces) -- currently exceeds this engine's lightmap atlas capacity and won't load until that gets a more fundamental (dynamic-page) fix.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_mountain": {
+			"title": "Firetop Mountain",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan. Dark stone mountain prison.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_necrokeep": {
+			"title": "The Necromancer Keep",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Sean Campbell / Matthew Breit.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_obd": {
+			"title": "Obsessive Brick Disorder",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan. A giant pile of neatly stacked bricks.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_swampy": {
+			"title": "Foggy Fogbottom",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Maik Franz Xaver. Gigantic interconnected medieval town.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_end": {
+			"title": "Journey's End",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Maik Franz Xaver. Final destination for AD travellers -- a secret level, normally reached by collecting 4 runes across other maps.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_chapters": {
+			"title": "Chapters",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan. More themes and portals.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_azad": {
+			"title": "The Realm of Enceladus",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Maik Franz Xaver.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_tfuma": {
+			"title": "Terror Fuma",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Gavin Edgington / Eric Wasylishen.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_magna": {
+			"title": "Leptis Magna",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Noel Lacaillade / Andrey Saenko.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_metmon": {
+			"title": "Arcane Monstrosity",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_zendar": {
+			"title": "The Horde of Zendar",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_sepulcher": {
+			"title": "The Forgotten Sepulcher",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Henrik Oresten / Simon O'Callaghan. One of AD's largest maps (42MB BSP2) -- expect this to run slower, in the same league as ad_start.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_ac": {
+			"title": "Arcane Adamantine",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Dmitry Svetlichny / Simon O'Callaghan.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_s1m1": {
+			"title": "Slipgate Conundrum",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_akalakha": {
+			"title": "Ak-Alakha",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Andrey Saenko.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_grendel": {
+			"title": "Grendel's Blade",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_scastle": {
+			"title": "Nyarlathotep's Sand Castle",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_tears": {
+			"title": "Tears of the False God",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Benoit Stordeur. AD's biggest map by far (85MB BSP2) -- expect this one to run poorly on this engine until the texture-binding/batching work gets done.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_dm5": {
+			"title": "The Mire",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Noel Lacaillade. Remix of DM5.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_e1m1": {
+			"title": "Hangar 16",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Sean Campbell. Remix of E1M1.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_e2m2": {
+			"title": "Ogre Bastille",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Simon O'Callaghan. Remix of E2M2.",
+			"layers": [ "mods/ad" ]
+		},
+		"ad_e2m7": {
+			"title": "The Underearth",
+			"category": "mod",
+			"mod": "Arcane Dimensions",
+			"blurb": "By Eric Wasylishen. Remix of E2M7.",
+			"layers": [ "mods/ad" ]
 		}
 	}
 }

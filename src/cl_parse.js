@@ -14,6 +14,7 @@ import { Con_Printf, Con_DPrintf, SZ_Clear,
 	net_message, standard_quake } from './common.js';
 import { Sys_Error, Sys_FloatTime } from './sys.js';
 import { COM_FindFile, COM_EnsureFile } from './pak.js';
+import { Feed_AddMessage, Feed_NoteHealthChange } from './hud_feed.js';
 
 // Files we've already tried and failed to fetch on demand, so a permanently
 // missing asset (e.g. not shipped with a custom map) doesn't cause an
@@ -69,7 +70,7 @@ import {
 	U_LONGENTITY, U_NOLERP,
 	DEFAULT_SOUND_PACKET_VOLUME, DEFAULT_SOUND_PACKET_ATTENUATION,
 	svc_packetentities, svc_deltapacketentities, svc_serversequence,
-	PE_ENT_BITS, PE_ENT_MASK, PE_ORIGIN1, PE_ORIGIN2, PE_ORIGIN3,
+	PE_ORIGIN1, PE_ORIGIN2, PE_ORIGIN3,
 	PE_ANGLE2, PE_REMOVE, PE_MOREBITS,
 	PE_FRAME, PE_ANGLE1, PE_ANGLE3, PE_MODEL, PE_COLORMAP, PE_SKIN, PE_EFFECTS, PE_SOLID,
 	MAX_PACKET_ENTITIES, PE_UPDATE_BACKUP, PE_UPDATE_MASK
@@ -194,7 +195,7 @@ export function CL_ParseStartSoundPacket() {
 		attenuation = DEFAULT_SOUND_PACKET_ATTENUATION;
 
 	const channel = MSG_ReadShort();
-	const sound_num = MSG_ReadByte();
+	const sound_num = MSG_ReadShort(); // was ReadByte -- see MAX_SOUNDS in quakedef.js
 
 	const ent = channel >> 3;
 	const ch = channel & 7;
@@ -484,13 +485,14 @@ Can delta from either a baseline or a previous packet_entity.
 Ported from: QW/client/cl_ents.c
 ==================
 */
-function CL_ParseDelta( from, to, bits ) {
+function CL_ParseDelta( from, to, entnum, bits ) {
 
 	// set everything to the state we are delta'ing from
 	to.copyFrom( from );
 
-	to.number = bits & PE_ENT_MASK;
-	bits &= ~PE_ENT_MASK;
+	// entnum used to be packed into the low bits of "bits" (see
+	// SV_WriteDelta in sv_main.js for why it's a separate param now)
+	to.number = entnum;
 
 	if ( bits & PE_MOREBITS ) {
 
@@ -503,7 +505,7 @@ function CL_ParseDelta( from, to, bits ) {
 	to.flags = bits;
 
 	if ( bits & PE_MODEL )
-		to.modelindex = MSG_ReadByte();
+		to.modelindex = MSG_ReadShort(); // was ReadByte -- see MAX_MODELS in quakedef.js
 
 	if ( bits & PE_FRAME )
 		to.frame = MSG_ReadByte();
@@ -557,8 +559,20 @@ function FlushEntityPacket() {
 	const seq = CL_GetServerSequence();
 	CL_GetEntityFrame( seq ).invalid = true;
 
-	// read it all, but ignore it
+	// read it all, but ignore it -- entnum and flags are two separate
+	// shorts now, see SV_WriteDelta in sv_main.js
 	while ( true ) {
+
+		const entnum = MSG_ReadShort() & 0xFFFF;
+		if ( msg_badread ) {
+
+			Host_EndGame( 'msg_badread in packetentities' );
+			return;
+
+		}
+
+		if ( entnum === 0 )
+			break; // done
 
 		const word = MSG_ReadShort() & 0xFFFF;
 		if ( msg_badread ) {
@@ -568,10 +582,7 @@ function FlushEntityPacket() {
 
 		}
 
-		if ( word === 0 )
-			break; // done
-
-		CL_ParseDelta( _flushOlde, _flushNewe, word );
+		CL_ParseDelta( _flushOlde, _flushNewe, entnum, word );
 
 	}
 
@@ -646,7 +657,11 @@ function CL_ParsePacketEntities( delta ) {
 
 	while ( true ) {
 
-		const word = MSG_ReadShort() & 0xFFFF;
+		// Entity number and flags are two separate shorts now (each entity
+		// number used to share a short with 6 flag bits, capping it at
+		// 1023 -- see SV_WriteDelta in sv_main.js). entnum===0 alone is
+		// still the terminator, with no flags short following it.
+		const newnum = MSG_ReadShort() & 0xFFFF;
 		if ( msg_badread ) {
 
 			Host_EndGame( 'msg_badread in packetentities' );
@@ -654,7 +669,7 @@ function CL_ParsePacketEntities( delta ) {
 
 		}
 
-		if ( word === 0 ) {
+		if ( newnum === 0 ) {
 
 			// copy all the rest of the entities from the old packet
 			while ( oldindex < oldp.num_entities ) {
@@ -676,7 +691,14 @@ function CL_ParsePacketEntities( delta ) {
 
 		}
 
-		const newnum = word & PE_ENT_MASK;
+		const word = MSG_ReadShort() & 0xFFFF; // flags
+		if ( msg_badread ) {
+
+			Host_EndGame( 'msg_badread in packetentities' );
+			return;
+
+		}
+
 		let oldnum = oldindex >= oldp.num_entities ? 9999 : oldp.entities[ oldindex ].number;
 
 		// copy unchanged old entities that sort before this new entry
@@ -730,7 +752,7 @@ function CL_ParsePacketEntities( delta ) {
 
 			}
 
-			CL_ParseDelta( cl_entities[ newnum ].baseline, newp.entities[ newindex ], word );
+			CL_ParseDelta( cl_entities[ newnum ].baseline, newp.entities[ newindex ], newnum, word );
 			newindex ++;
 			continue;
 
@@ -760,7 +782,7 @@ function CL_ParsePacketEntities( delta ) {
 
 			}
 
-			CL_ParseDelta( oldp.entities[ oldindex ], newp.entities[ newindex ], word );
+			CL_ParseDelta( oldp.entities[ oldindex ], newp.entities[ newindex ], newnum, word );
 			newindex ++;
 			oldindex ++;
 
@@ -969,7 +991,7 @@ CL_ParseBaseline
 */
 export function CL_ParseBaseline( ent ) {
 
-	ent.baseline.modelindex = MSG_ReadByte();
+	ent.baseline.modelindex = MSG_ReadShort(); // was ReadByte -- see MAX_MODELS in quakedef.js
 	ent.baseline.frame = MSG_ReadByte();
 	ent.baseline.colormap = MSG_ReadByte();
 	ent.baseline.skin = MSG_ReadByte();
@@ -1063,6 +1085,7 @@ export function CL_ParseClientdata( bits ) {
 	if ( cl.stats[ STAT_HEALTH ] !== i ) {
 
 		cl.stats[ STAT_HEALTH ] = i;
+		Feed_NoteHealthChange( i );
 		// Sbar_Changed();
 
 	}
@@ -1217,7 +1240,7 @@ function CL_ParsePlayerInfo() {
 	// Read optional model (default to player model if not specified)
 	let modelindex = cl_playerindex;
 	if ( flags & PF_MODEL )
-		modelindex = MSG_ReadByte();
+		modelindex = MSG_ReadShort(); // was ReadByte -- see MAX_MODELS in quakedef.js
 
 	// Read optional skin
 	let skin = 0;
@@ -1290,7 +1313,7 @@ export function CL_ParseStaticSound() {
 	const org = _staticSoundOrg;
 	for ( let i = 0; i < 3; i ++ )
 		org[ i ] = MSG_ReadCoord();
-	const sound_num = MSG_ReadByte();
+	const sound_num = MSG_ReadShort(); // was ReadByte -- see MAX_SOUNDS in quakedef.js
 	const vol = MSG_ReadByte();
 	const atten = MSG_ReadByte();
 
@@ -1385,9 +1408,17 @@ export function CL_ParseServerMessage() {
 				Host_EndGame( 'Server disconnected\n' );
 				break;
 
-			case svc_print:
-				Con_Printf( '%s', MSG_ReadString() );
+			case svc_print: {
+
+				const printText = MSG_ReadString();
+				Con_Printf( '%s', printText );
+				// \x01 marks chat text (Host_Say prefixes it, see
+				// host_cmd.js) -- everything else is a broadcast event
+				// (kills, secrets, etc), which belongs in the feed too.
+				if ( printText.charAt( 0 ) !== '\x01' ) Feed_AddMessage( printText );
 				break;
+
+			}
 
 			case svc_centerprint:
 				SCR_CenterPrint( MSG_ReadString() );
@@ -1500,12 +1531,17 @@ export function CL_ParseServerMessage() {
 				cl.stats[ STAT_SECRETS ] ++;
 				break;
 
-			case svc_updatestat:
+			case svc_updatestat: {
+
 				i = MSG_ReadByte();
 				if ( i < 0 || i >= MAX_CL_STATS )
 					Sys_Error( 'svc_updatestat: %i is invalid', i );
-				cl.stats[ i ] = MSG_ReadLong();
+				const statValue = MSG_ReadLong();
+				cl.stats[ i ] = statValue;
+				if ( i === STAT_HEALTH ) Feed_NoteHealthChange( statValue );
 				break;
+
+			}
 
 			case svc_spawnstaticsound:
 				CL_ParseStaticSound();

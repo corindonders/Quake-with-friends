@@ -1,0 +1,62 @@
+
+----------------------------
+Quoth - Part Two
+----------------------------
+
+"Once upon a midnight dreary, while I pondered, weak and weary,
+Over many a quaint and curious volume of forgotten lore..."
+
+This second installment of the Quoth expansion pack is oriented around base-themed content.
+Being used to introduce each episode of the original game, the base maps in Quake have almost always been populated only with the weakest monsters in the bestiary. Quoth part two attempts to rectify this absence.
+Many other features and improvements less visible than the base content are also part of this release.
+See the web page for more info: http://kell.leveldesign.org
+
+Also, for help, tech support and further releases, keep an eye on Func_Msgboard: http://celephais.net/board
+
+
+----------------------------
+Installation
+----------------------------
+
+Create a subfolder in your /quake directory called /quoth. Extract quoth.zip into it.
+The content for this update is contained in pak1.pak. You should already have pak0.pak.
+
+Note that when you run the pak, add to your quake engine command line:
+
+-hipnotic -game quoth
+
+and not simply -game quoth. This is to enable the Scourge Of Armagon HUD layout that we have utilized for our powerups and weapons. You do not need to have Scourge Of Armagon installed for this to work.
+
+We recommend FitzQuake as the engine of choice for playing Quoth: http://celephais.net/fitzquake
+
+
+----------------------------
+Thanks
+----------------------------
+
+than, distrans, biff, ijed, goldenboy, JPL, Trinca, HeadThump  - playtesting
+aguirRe - compilers 
+metlslime - fitzquake, func
+Scampie - hosting
+Spirit - quaddicted
+Lunaran - playtesting, general cantankerousness
+Sidhe - playtesting, encouragement, coop, support, cake, and glass...everywhere!
+
+
+----------------------------
+Legal
+----------------------------
+
+You may distribute this .zip file, without modifying its contents, via the internet or BBS systems.
+You may not distribute it via cover CD without the authors' prior permission.
+
+Preach/necros/Kell
+
+March
+2008
+
+
+----------------------------
+
+"Nevermore!"
+

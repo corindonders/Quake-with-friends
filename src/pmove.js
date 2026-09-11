@@ -221,7 +221,11 @@ PM_HullPointContents
 */
 export function PM_HullPointContents( hull, num, p ) {
 	while ( num >= 0 ) {
-		if ( num < hull.firstclipnode || num > hull.lastclipnode ) {
+		// See the comment in world.js's SV_RecursiveHullCheck -- BSP2 maps
+		// with deduped/shared clipnode subtrees can legitimately reference
+		// nodes outside [firstclipnode, lastclipnode], so only the
+		// array-bounds invariant is enforced here.
+		if ( num >= hull.clipnodes.length ) {
 			console.error( 'PM_HullPointContents: bad node number' );
 			return CONTENTS_SOLID;
 		}
@@ -277,7 +281,11 @@ function PM_RecursiveHullCheck( hull, num, p1f, p2f, p1, p2, trace ) {
 		return true; // empty
 	}
 
-	if ( num < hull.firstclipnode || num > hull.lastclipnode ) {
+	// See the comment in world.js's SV_RecursiveHullCheck -- BSP2 maps with
+	// deduped/shared clipnode subtrees can legitimately reference nodes
+	// outside [firstclipnode, lastclipnode], so only the array-bounds
+	// invariant is enforced here.
+	if ( num >= hull.clipnodes.length ) {
 		console.error( 'PM_RecursiveHullCheck: bad node number' );
 		return true;
 	}

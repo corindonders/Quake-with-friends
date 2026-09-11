@@ -9,7 +9,7 @@ import { r_origin } from './render.js';
 import { cl_dlights } from './client.js';
 import { isXRActive, XR_SCALE } from './webxr.js';
 
-export const MAX_DLIGHTS = 32;
+export const MAX_DLIGHTS = 32; // keep in sync with client.js's own copy -- see its comment on why this isn't raised
 
 // Surface flags
 export const SURF_DRAWTILED = 0x20;

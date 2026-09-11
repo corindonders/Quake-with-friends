@@ -1,5 +1,5 @@
 /// <reference lib="deno.unstable" />
-// Three-Quake auth: admin-managed accounts, password hashing, sessions.
+// Quake with Friends auth: admin-managed accounts, password hashing, sessions.
 // Storage: Deno KV (local file-backed, no external DB needed).
 //
 // Threat model: a small trusted friend group. This is intentionally simple --

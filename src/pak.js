@@ -6,7 +6,8 @@
 import { Sys_Printf, Sys_Error } from './sys.js';
 import { Con_Printf } from './common.js';
 
-const MAX_FILES_IN_PACK = 2048;
+// Was 2048 -- AD's pak0.pak alone has 1907 files; headroom for bigger mods.
+const MAX_FILES_IN_PACK = 8192;
 
 class packfile_t {
 

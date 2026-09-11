@@ -10,7 +10,7 @@ SYSTEM IO
 
 export function Sys_Init() {
 
-	console.log( 'Three-Quake initializing...' );
+	console.log( 'Quake with Friends initializing...' );
 
 }
 

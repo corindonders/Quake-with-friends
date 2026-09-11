@@ -9,7 +9,10 @@ import { sizebuf_t } from './common.js';
 
 export const NET_NAMELEN = 64;
 
-export const NET_MAXMESSAGE = 8192;
+// Was 8192 -- see MAX_MSGLEN in quakedef.js for why this needed raising too
+// (this is the loopback/WebTransport per-message buffer size; keep it >=
+// MAX_MSGLEN so a full signon message can actually fit through).
+export const NET_MAXMESSAGE = 300000;
 export const NET_HEADERSIZE = ( 2 * 4 ); // 2 * sizeof(unsigned int)
 export const NET_DATAGRAMSIZE = ( MAX_DATAGRAM + NET_HEADERSIZE );
 

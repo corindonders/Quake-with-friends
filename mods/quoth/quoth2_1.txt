@@ -1,0 +1,73 @@
+
+----------------------------
+Quoth - THE 2.1 PATCH
+----------------------------
+
+"Once upon a midnight dreary, while I pondered, weak and weary,
+Over many a quaint and curious volume of forgotten lore..."
+
+
+This is a small patch released a few months after Part Two, to address various issues in the code, make subtle improvments, and include a few pieces of content we forgot to add to the previous pak.
+In summary:
+
+	Fixes:
+	- Vermis throw has been smoothed, now no longer teleports player to arbitrary coordinates or pushes them  through objects.
+	- Quake sounds now included.
+	- info_bomb no longer crashes server when used.
+	- path_corner can no longer cause dead monsters to start walking when delay is set.
+	- Drole walk animation now loops correctly.
+	
+	Changes:
+	- Many pieces of code optimised, cutting down on use of force_retouch.
+	- func_breakable and info_rubble support the "dmg" key, which controls how much damage each chunk of  debris inflicts on 	contact with players.
+	- Seismometer has been disabled.
+	
+	Content
+	- "moon" skybox
+	- alternate mummy skin for zombie
+
+See the web page for more info: http://kell.leveldesign.org
+
+Also, for help, tech support and further releases, keep an eye on Func_Msgboard: http://celephais.net/board
+
+
+----------------------------
+Installation
+----------------------------
+
+Create a subfolder in your /quake directory called /quoth. Extract quoth2_1.zip into it.
+The content for this update is contained in pak2.pak. You should already have pak0.pak and pak1.pak.
+
+Note that when you run the pak, add to your quake engine command line:
+
+-hipnotic -game quoth
+
+and not simply -game quoth. This is to enable the Scourge Of Armagon HUD layout that we have utilized for our powerups and weapons. You do not need to have Scourge Of Armagon installed for this to work.
+
+We recommend FitzQuake as the engine of choice for playing Quoth: http://celephais.net/fitzquake
+
+
+----------------------------
+Thanks
+----------------------------
+
+The usual suspects ¬_¬
+
+
+----------------------------
+Legal
+----------------------------
+
+You may distribute this .zip file, without modifying its contents, via the internet or BBS systems.
+You may not distribute it via cover CD without the authors' prior permission.
+
+Preach/Kell
+
+June
+2008
+
+
+----------------------------
+
+"Nevermore!"
+

@@ -35,6 +35,7 @@ import { SV_LinkEdict } from './world.js';
 import { SV_ClientPrintf, SV_BroadcastPrintf,
 	Host_ShutdownServer, Host_Shutdown } from './host.js';
 import { COM_FindFile, COM_EnsureFile } from './pak.js';
+import { Horde_Init } from './horde.js';
 
 export let noclip_anglehack = false;
 
@@ -72,6 +73,7 @@ export function Host_InitCommands() {
 	Cmd_AddCommand( 'give', Host_Give_f );
 	Cmd_AddCommand( 'summon', Host_Summon_f );
 	Cmd_AddCommand( 'classlist', Host_Classlist_f );
+	Horde_Init();
 	Cmd_AddCommand( 'ping', Host_Ping_f );
 	Cmd_AddCommand( 'kick', Host_Kick_f );
 	Cmd_AddCommand( 'save', Host_Savegame_f );
@@ -89,7 +91,7 @@ export function Host_InitCommands() {
 
 function Host_Status_f() {
 
-	Con_Printf( 'host:    Three-Quake\n' );
+	Con_Printf( 'host:    Quake with Friends\n' );
 	Con_Printf( 'map:     ' + ( sv.name || 'none' ) + '\n' );
 	Con_Printf( 'players: ' + svs.maxclients + ' max\n' );
 

@@ -1,5 +1,5 @@
 {
-	"name": "@three-quake/server",
+	"name": "@quake-with-friends/server",
 	"version": "1.0.0",
 	"exports": "./main.ts",
 	"tasks": {
@@ -12,6 +12,7 @@
 	},
 	"imports": {
 		"@std/path": "jsr:@std/path@^1",
-		"three": "./browser_shim.js"
+		"three": "./browser_shim.js",
+		"three/addons/loaders/TGALoader.js": "./tga_addon_shim.js"
 	}
 }

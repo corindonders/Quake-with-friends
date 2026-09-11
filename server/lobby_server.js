@@ -1,4 +1,4 @@
-// Three-Quake Lobby Server for Deno
+// Quake with Friends Lobby Server for Deno
 // One HTTP(S) server handles everything: login, the room lobby (list/create/
 // join over WebSocket), and relaying gameplay traffic to room processes.
 // Rooms are separate Deno processes (room_process_manager.ts); their own
@@ -697,7 +697,7 @@ function buildHandler() {
 
 		}
 
-		return new Response( 'Three-Quake lobby server\n', { status: 200 } );
+		return new Response( 'Quake with Friends lobby server\n', { status: 200 } );
 
 	};
 
@@ -708,7 +708,7 @@ function buildHandler() {
  */
 async function startServer() {
 	Sys_Printf( '========================================\n' );
-	Sys_Printf( 'Three-Quake Lobby Server v2.0 (WebSocket)\n' );
+	Sys_Printf( 'Quake with Friends Lobby Server v2.0 (WebSocket)\n' );
 	Sys_Printf( '========================================\n\n' );
 
 	if ( ! Deno.env.get( 'THREE_QUAKE_SECRET' ) ) {

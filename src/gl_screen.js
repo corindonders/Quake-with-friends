@@ -13,6 +13,7 @@ import { Cmd_AddCommand } from './cmd.js';
 import { key_dest, key_game, key_console, key_message } from './keys.js';
 import { realtime, host_frametime } from './host.js';
 import { renderer } from './vid.js';
+import { Feed_Draw } from './hud_feed.js';
 import { r_refdef as _r_refdef_canonical } from './render.js';
 
 /*
@@ -603,8 +604,12 @@ function SCR_DrawConsole() {
 
 	} else {
 
-		if ( key_dest === key_game || key_dest === key_message )
+		if ( key_dest === key_game || key_dest === key_message ) {
+
 			Con_DrawNotify(); // only draw notify in game
+			Feed_Draw();
+
+		}
 
 	}
 

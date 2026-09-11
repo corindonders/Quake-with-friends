@@ -121,7 +121,7 @@ export async function WS_Listen( state: boolean ): Promise<void> {
 		async ( req ) => {
 
 			if ( req.headers.get( 'upgrade' ) !== 'websocket' ) {
-				return new Response( 'Three-Quake room process\n', { status: 200 } );
+				return new Response( 'Quake with Friends room process\n', { status: 200 } );
 			}
 
 			// Loopback-only doesn't mean "safe" -- anything else on the same
