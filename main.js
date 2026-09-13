@@ -9,6 +9,8 @@ import { Cbuf_AddText } from './src/cmd.js';
 import { requireSession, fetchMapdb } from './src/auth_client.js';
 import { WS_SetAuthToken } from './src/net_websocket.js';
 import { TravelUI_Init } from './src/travel_ui.js';
+import { HubKiosk_Init, HubKiosk_Frame } from './src/hub_kiosk.js';
+import { HUB_ROOM_ID, HUB_MOD } from './src/hub_config.js';
 import { cls, cl } from './src/client.js';
 import { sv } from './src/server.js';
 import { scene, camera } from './src/gl_rmain.js';
@@ -95,7 +97,7 @@ async function main() {
 		const explicitRoomId = urlParams.get( 'room' );
 
 		// No explicit map or room requested: we're about to auto-join the hub
-		// below, which is Copper's own "start" map -- the client needs that
+		// below (map/mod from src/hub_config.js) -- the client needs that
 		// mod's assets loaded too, same as the room does server-side.
 		const joiningHub = ! mapName && ! explicitRoomId &&
 			!! ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby );
@@ -111,7 +113,7 @@ async function main() {
 
 		if ( modDirs.length === 0 && joiningHub ) {
 
-			modDirs = [ 'mods/copper' ];
+			modDirs = [ HUB_MOD ];
 
 		}
 
@@ -141,6 +143,7 @@ async function main() {
 		}
 
 		TravelUI_Init( modDirs );
+		HubKiosk_Init();
 
 		// Preload custom menu images
 		try {
@@ -171,7 +174,7 @@ async function main() {
 		// logged in -- that's the "meet up before picking a world" flow.
 		if ( joiningHub ) {
 
-			roomId = 'HUBWLD';
+			roomId = HUB_ROOM_ID;
 
 		}
 
@@ -220,6 +223,7 @@ async function main() {
 			oldtime = newtime;
 
 			Host_Frame( time );
+			HubKiosk_Frame();
 
 		} );
 

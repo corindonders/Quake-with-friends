@@ -1,7 +1,12 @@
 {
 	"imports": {
 		"three": "./server/browser_shim.js",
-		"three/addons/loaders/TGALoader.js": "./server/tga_addon_shim.js"
+		"three/addons/loaders/TGALoader.js": "./server/tga_addon_shim.js",
+		"three/addons/postprocessing/EffectComposer.js": "./server/postprocess_addon_shim.js",
+		"three/addons/postprocessing/RenderPass.js": "./server/postprocess_addon_shim.js",
+		"three/addons/postprocessing/ShaderPass.js": "./server/postprocess_addon_shim.js",
+		"three/addons/postprocessing/OutputPass.js": "./server/postprocess_addon_shim.js",
+		"three/addons/shaders/FXAAShader.js": "./server/postprocess_addon_shim.js"
 	},
 	"tasks": {
 		"server": "deno run --allow-net --allow-read --unstable-net game_server.js"

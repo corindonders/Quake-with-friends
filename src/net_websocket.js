@@ -109,6 +109,39 @@ export function WS_SetAuthToken( token ) {
 
 }
 
+/*
+=============
+Hub control channel
+
+The gameplay connection keeps carrying text frames after the join: that's
+how the in-world kiosk (src/hub_kiosk.js) sends HUB_START_MAP up to the
+lobby, and how the lobby's TRAVEL_TO broadcast -- "everyone in the hub, go
+to this room now" -- comes back down. No second connection, and nothing the
+Quake protocol itself has to know about.
+=============
+*/
+
+let ws_gameConn = null; // the live gameplay connection, if any
+let ws_travelHandler = null;
+
+export function WS_SetTravelHandler( handler ) {
+
+	ws_travelHandler = handler;
+
+}
+
+export function WS_SendHubStart( config ) {
+
+	if ( ws_gameConn == null || ws_gameConn.socket.readyState !== WebSocket.OPEN ) {
+
+		throw new Error( 'Not connected' );
+
+	}
+
+	ws_gameConn.socket.send( JSON.stringify( { type: 'HUB_START_MAP', config } ) );
+
+}
+
 const ws_connections = new Map(); // qsocket_t -> WSConnection
 
 class WSConnection {
@@ -429,7 +462,23 @@ export async function WS_Connect( host ) {
 		// Now in game-data mode: binary frames are Quake packets.
 		socket.addEventListener( 'message', ( event ) => {
 
-			if ( typeof event.data === 'string' ) return; // ignore stray control frames
+			if ( typeof event.data === 'string' ) {
+
+				let control;
+				try { control = JSON.parse( event.data ); } catch ( e ) { return; }
+
+				if ( control.type === 'TRAVEL_TO' && ws_travelHandler != null ) {
+
+					ws_travelHandler( control );
+
+				} else if ( control.type === 'HUB_START_FAILED' ) {
+
+					Con_Printf( 'Could not start the match: ' + control.error + '\n' );
+
+				}
+				return;
+
+			}
 
 			const bytes = new Uint8Array( event.data );
 			if ( bytes.length < 1 ) return;
@@ -456,6 +505,7 @@ export async function WS_Connect( host ) {
 
 		ws_connections.set( sock, conn );
 		sock.driverdata = conn;
+		ws_gameConn = conn;
 
 		Con_Printf( 'WebSocket connection established\n' );
 
@@ -604,5 +654,6 @@ export function WS_Close( sock ) {
 	try { conn.socket.close(); } catch ( e ) { /* ignore */ }
 
 	ws_connections.delete( sock );
+	if ( ws_gameConn === conn ) ws_gameConn = null;
 
 }

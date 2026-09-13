@@ -48,6 +48,10 @@ import {
 	createRoomTicket,
 } from './auth.ts';
 import { listMaps, getMap, setMap, deleteMap } from './mapdb.ts';
+import {
+	HUB_ROOM_ID, HUB_MAP, HUB_MOD, HUB_MAX_PLAYERS,
+	Hub_NormalizeModeConfig, Hub_RoomIdForConfig,
+} from '../src/hub_config.js';
 
 // Server configuration
 const CONFIG = {
@@ -80,7 +84,51 @@ function parseArgs() {
 }
 
 const ROOM_ID_PATTERN = /^[A-Z0-9]{6}$/;
-const HUB_ROOM_ID = 'HUBWLD';
+
+// Every relay connection currently sitting in a room, so the hub kiosk's
+// "Start" can pull everyone in the hub into the same match at once.
+const roomClients = new Map(); // roomId -> Set<WebSocket>
+
+function RoomClients_Add( roomId, socket ) {
+
+	let set = roomClients.get( roomId );
+	if ( set === undefined ) {
+
+		set = new Set();
+		roomClients.set( roomId, set );
+
+	}
+	set.add( socket );
+
+}
+
+function RoomClients_Remove( roomId, socket ) {
+
+	const set = roomClients.get( roomId );
+	if ( set === undefined ) return;
+
+	set.delete( socket );
+	if ( set.size === 0 ) roomClients.delete( roomId );
+
+}
+
+function RoomClients_Broadcast( roomId, message ) {
+
+	const set = roomClients.get( roomId );
+	if ( set === undefined ) return 0;
+
+	const payload = JSON.stringify( message );
+	let sent = 0;
+	for ( const socket of set ) {
+
+		if ( socket.readyState !== WebSocket.OPEN ) continue;
+		try { socket.send( payload ); sent ++; } catch ( e ) { /* ignore */ }
+
+	}
+
+	return sent;
+
+}
 
 // ---------------------------------------------------------------------------
 // Login
@@ -180,9 +228,9 @@ async function resolveRoomForJoin( rawRoomId ) {
 
 		Sys_Printf( 'Hub room missing on join -- recreating\n' );
 		await RoomManager_CreateRoom( {
-			map: 'start',
-			mod: 'mods/copper',
-			maxPlayers: 16,
+			map: HUB_MAP,
+			mod: HUB_MOD,
+			maxPlayers: HUB_MAX_PLAYERS,
 			hostName: 'Hub',
 			specificId: HUB_ROOM_ID,
 			persistent: true,
@@ -208,16 +256,77 @@ async function resolveRoomForJoin( rawRoomId ) {
 
 }
 
+/**
+ * The hub kiosk's "Start": resolve (creating if needed) the room that matches
+ * the chosen map + mode, then tell everyone standing in the hub to travel
+ * there, so the whole group lands in the same match together.
+ */
+async function handleHubStart( config ) {
+
+	const normalized = Hub_NormalizeModeConfig( config );
+	if ( normalized.mapId.length === 0 ) return { error: 'Pick a map first.' };
+
+	const entry = await getMap( normalized.mapId );
+	if ( entry === null ) return { error: 'No such map.' };
+
+	const roomId = Hub_RoomIdForConfig( normalized );
+	const mod = ( entry.layers || [] ).join( ',' );
+
+	const result = await RoomManager_CreateRoom( {
+		map: normalized.mapId,
+		mod,
+		maxPlayers: normalized.maxPlayers,
+		hostName: 'Hub',
+		specificId: roomId,
+		mode: normalized.mode,
+		teamCount: normalized.teamCount,
+	} );
+
+	if ( result === null ) return { error: 'Server room limit reached. Try again later.' };
+
+	const sent = RoomClients_Broadcast( HUB_ROOM_ID, {
+		type: 'TRAVEL_TO',
+		mapId: normalized.mapId,
+		roomId: result.id,
+		mode: normalized.mode,
+	} );
+
+	Sys_Printf( 'Hub start: %s (%s) -> room %s, %d player(s) travelling\n',
+		normalized.mapId, normalized.mode, result.id, sent );
+
+	return { ok: true };
+
+}
+
 function handleWsConnection( socket, address ) {
 
 	let phase = 'control'; // 'control' (JSON lobby requests) | 'relay' (raw game bytes)
 	let roomSocket = null;
+	let joinedRoomId = null;
 
 	socket.addEventListener( 'message', async ( event ) => {
 
 		if ( phase === 'relay' ) {
 
-			if ( typeof event.data !== 'string' && roomSocket && roomSocket.readyState === WebSocket.OPEN ) {
+			// Text frames stay lobby business even after the join -- that's
+			// how the in-world hub kiosk starts a match without opening a
+			// second connection. Everything else is raw game data.
+			if ( typeof event.data === 'string' ) {
+
+				let relayMsg;
+				try { relayMsg = JSON.parse( event.data ); } catch ( e ) { return; }
+
+				if ( relayMsg.type === 'HUB_START_MAP' && joinedRoomId === HUB_ROOM_ID ) {
+
+					const result = await handleHubStart( relayMsg.config );
+					if ( result.error ) socket.send( JSON.stringify( { type: 'HUB_START_FAILED', error: result.error } ) );
+
+				}
+				return;
+
+			}
+
+			if ( roomSocket && roomSocket.readyState === WebSocket.OPEN ) {
 
 				roomSocket.send( event.data );
 
@@ -352,6 +461,8 @@ function handleWsConnection( socket, address ) {
 			roomSocket.addEventListener( 'error', () => { try { socket.close(); } catch ( e ) { /* ignore */ } } );
 
 			phase = 'relay';
+			joinedRoomId = room.id;
+			RoomClients_Add( room.id, socket );
 			socket.send( JSON.stringify( { ok: true } ) );
 			Sys_Printf( 'Player %s joined room %s\n', session.username, room.id );
 			return;
@@ -364,12 +475,14 @@ function handleWsConnection( socket, address ) {
 
 	socket.addEventListener( 'close', () => {
 
+		if ( joinedRoomId !== null ) RoomClients_Remove( joinedRoomId, socket );
 		if ( roomSocket ) { try { roomSocket.close(); } catch ( e ) { /* ignore */ } }
 
 	} );
 
 	socket.addEventListener( 'error', () => {
 
+		if ( joinedRoomId !== null ) RoomClients_Remove( joinedRoomId, socket );
 		if ( roomSocket ) { try { roomSocket.close(); } catch ( e ) { /* ignore */ } }
 
 	} );
@@ -741,13 +854,13 @@ async function startServer() {
 
 	Deno.serve( serveOptions, buildHandler() );
 
-	// Persistent hub room: Copper's own "start" map (its narrative hub level),
-	// always running, exempt from idle cleanup, so there's always somewhere
-	// for players to land and meet before picking a world to travel to.
+	// Persistent hub room (map/mod chosen in src/hub_config.js), always
+	// running, exempt from idle cleanup, so there's always somewhere for
+	// players to land and meet before starting a match at the kiosk.
 	const hub = await RoomManager_CreateRoom( {
-		map: 'start',
-		mod: 'mods/copper',
-		maxPlayers: 16,
+		map: HUB_MAP,
+		mod: HUB_MOD,
+		maxPlayers: HUB_MAX_PLAYERS,
 		hostName: 'Hub',
 		specificId: HUB_ROOM_ID,
 		persistent: true,

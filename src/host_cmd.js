@@ -33,7 +33,7 @@ import { SCR_BeginLoadingPlaque } from './gl_screen.js';
 import { hostname } from './net_main.js';
 import { SV_LinkEdict } from './world.js';
 import { SV_ClientPrintf, SV_BroadcastPrintf,
-	Host_ShutdownServer, Host_Shutdown } from './host.js';
+	Host_ShutdownServer, Host_Shutdown, teamplay, teamcount } from './host.js';
 import { COM_FindFile, COM_EnsureFile } from './pak.js';
 import { Horde_Init } from './horde.js';
 
@@ -1476,6 +1476,48 @@ function Host_PreSpawn_f() {
 Host_Spawn_f
 ==================
 */
+/*
+==================
+Host_BalanceTeam
+
+Team modes started from the hub kiosk don't ask players to pick a side, so
+put each one on the emptiest team as they spawn. Writes host_client.colors
+(bottom colour is the team, same encoding Host_Color_f uses) -- Host_Spawn_f
+derives ent.v.team from it a moment later, and the colour update goes out to
+everyone with the rest of the spawn info.
+
+teamcount 0 (every non-team mode) leaves the player's own colour alone.
+==================
+*/
+function Host_BalanceTeam() {
+
+	const teams = Math.floor( teamcount.value );
+	if ( teamplay.value === 0 || teams < 2 ) return;
+
+	const counts = new Array( teams ).fill( 0 );
+
+	for ( let i = 0; i < svs.maxclients; i ++ ) {
+
+		const client = svs.clients[ i ];
+		if ( client == null || client === host_client ) continue;
+		if ( client.active === false ) continue;
+
+		const team = ( client.colors & 15 ) % teams;
+		counts[ team ] ++;
+
+	}
+
+	let smallest = 0;
+	for ( let i = 1; i < teams; i ++ ) {
+
+		if ( counts[ i ] < counts[ smallest ] ) smallest = i;
+
+	}
+
+	host_client.colors = smallest * 16 + smallest;
+
+}
+
 function Host_Spawn_f() {
 
 	if ( cmd_source === src_command ) {
@@ -1500,6 +1542,8 @@ function Host_Spawn_f() {
 		sv.paused = false;
 
 	} else {
+
+		Host_BalanceTeam();
 
 		// set up the edict
 		const ent = host_client.edict;

@@ -83,6 +83,9 @@ const serverprofile = new cvar_t( 'serverprofile', '0' );
 export const fraglimit = new cvar_t( 'fraglimit', '0', false, true );
 export const timelimit = new cvar_t( 'timelimit', '0', false, true );
 export const teamplay = new cvar_t( 'teamplay', '0', false, true );
+// How many teams to split joining players across when teamplay is on. 0 keeps
+// the vanilla behaviour of honouring whatever colour the player picked.
+export const teamcount = new cvar_t( 'teamcount', '0', false, true );
 
 export const samelevel = new cvar_t( 'samelevel', '0' );
 export const noexit = new cvar_t( 'noexit', '0', false, true );

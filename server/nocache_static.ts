@@ -4,7 +4,7 @@
 // reloads, without a single network round-trip). Serves the repo root.
 import { serveDir } from 'jsr:@std/http/file-server';
 
-const root = new URL( '../', import.meta.url ).pathname.replace( /^\/([A-Za-z]:)/, '$1' );
+const root = decodeURIComponent( new URL( '../', import.meta.url ).pathname ).replace( /^\/([A-Za-z]:)/, '$1' );
 
 Deno.serve( { port: 8123 }, ( req ) => {
 

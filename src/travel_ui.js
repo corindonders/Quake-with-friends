@@ -5,7 +5,7 @@
 // the hub.
 
 import { Cbuf_AddText } from './cmd.js';
-import { WS_CreateRoom } from './net_websocket.js';
+import { WS_CreateRoom, WS_SetTravelHandler } from './net_websocket.js';
 import { Con_Printf } from './common.js';
 import { fetchMapdb } from './auth_client.js';
 import { COM_LoadMod } from './pak.js';
@@ -66,7 +66,13 @@ function escapeHTML( s ) {
 
 }
 
-async function travelTo( mapId, entry ) {
+/**
+ * Move this client to `mapId`. Two callers: the manual picker below (which
+ * derives the room from the map alone), and the hub kiosk's TRAVEL_TO
+ * broadcast (see TravelUI_TravelTo), which passes the room the lobby has
+ * already created with the chosen game mode attached.
+ */
+async function travelTo( mapId, entry, existingRoomId ) {
 
 	setStatus( 'Traveling to ' + entry.title + '…' );
 
@@ -91,14 +97,21 @@ async function travelTo( mapId, entry ) {
 		if ( ! lobby ) throw new Error( 'No server configured (server-config.js)' );
 
 		const serverUrl = ( window.location.protocol === 'https:' ? 'https://' : 'http://' ) + lobby;
-		const roomId = roomIdForMap( mapId );
+		const roomId = existingRoomId || roomIdForMap( mapId );
 
-		await WS_CreateRoom( serverUrl, {
-			map: mapId,
-			mod: ( entry.layers || [] ).join( ',' ),
-			maxPlayers: 16,
-			specificId: roomId,
-		} );
+		// The kiosk path's room is already up (and already carries the game
+		// mode) -- creating it again here would only risk replacing it with
+		// a default-mode one.
+		if ( ! existingRoomId ) {
+
+			await WS_CreateRoom( serverUrl, {
+				map: mapId,
+				mod: ( entry.layers || [] ).join( ',' ),
+				maxPlayers: 16,
+				specificId: roomId,
+			} );
+
+		}
 
 		Cbuf_AddText( 'disconnect\n' );
 		Cbuf_AddText( 'connect "' + serverUrl + '?room=' + roomId + '"\n' );
@@ -168,9 +181,33 @@ function togglePanel() {
 
 }
 
+/**
+ * Travel without the panel, for the hub kiosk's "everyone goes now"
+ * broadcast. Looks the destination's catalog entry up itself, since the
+ * caller only gets a map id off the wire.
+ */
+export async function TravelUI_TravelTo( mapId, roomId ) {
+
+	const mapdb = await loadMapdb();
+	const entry = mapdb[ mapId ] || { title: mapId, layers: [] };
+
+	await travelTo( mapId, entry, roomId );
+
+}
+
 export function TravelUI_Init( alreadyLoadedModDirs ) {
 
 	for ( const dir of ( alreadyLoadedModDirs || [] ) ) loadedModDirs.add( dir );
+
+	WS_SetTravelHandler( ( msg ) => {
+
+		TravelUI_TravelTo( msg.mapId, msg.roomId ).catch( ( e ) => {
+
+			Con_Printf( 'Travel failed: ' + e.message + '\n' );
+
+		} );
+
+	} );
 
 
 	const style = document.createElement( 'style' );
