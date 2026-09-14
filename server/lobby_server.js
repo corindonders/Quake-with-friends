@@ -130,6 +130,71 @@ function RoomClients_Broadcast( roomId, message ) {
 
 }
 
+/*
+=============================================================================
+
+Hub presence -- who is sitting on the 2D hub page (hub.html) right now.
+
+The open socket *is* the presence: a player appears on everyone's roster
+when their page connects and disappears when it closes, so there's no
+heartbeat or timeout to get wrong. Keyed by socket rather than username
+because one account can have the page open twice (two tabs, phone +
+laptop); the roster itself is deduped so a person still shows up once.
+
+Separate from roomClients above: that tracks connections relayed into an
+actual running game room, this tracks people on the web page.
+=============================================================================
+*/
+
+const hubPresence = new Map(); // WebSocket -> { username, isAdmin, joinedAt }
+
+function HubPresence_Roster() {
+
+	const byUser = new Map();
+	for ( const entry of hubPresence.values() ) {
+
+		const seen = byUser.get( entry.username );
+		if ( seen === undefined || entry.joinedAt < seen.joinedAt ) byUser.set( entry.username, entry );
+
+	}
+
+	return [ ...byUser.values() ]
+		.sort( ( a, b ) => a.joinedAt - b.joinedAt )
+		.map( ( e ) => ( { username: e.username, isAdmin: e.isAdmin } ) );
+
+}
+
+function HubPresence_Broadcast() {
+
+	const payload = JSON.stringify( { type: 'presence', players: HubPresence_Roster() } );
+	for ( const socket of hubPresence.keys() ) {
+
+		if ( socket.readyState !== WebSocket.OPEN ) continue;
+		try { socket.send( payload ); } catch ( e ) { /* ignore */ }
+
+	}
+
+}
+
+function HubPresence_Add( socket, session ) {
+
+	hubPresence.set( socket, {
+		username: session.username,
+		isAdmin: session.isAdmin === true,
+		joinedAt: Date.now(),
+	} );
+
+	HubPresence_Broadcast();
+
+}
+
+function HubPresence_Remove( socket ) {
+
+	if ( ! hubPresence.delete( socket ) ) return;
+	HubPresence_Broadcast();
+
+}
+
 // ---------------------------------------------------------------------------
 // Login
 // ---------------------------------------------------------------------------
@@ -358,6 +423,18 @@ function handleWsConnection( socket, address ) {
 
 		}
 
+		// hub.html holds this socket open for as long as its page is open --
+		// see the HubPresence helpers above. Nothing further is sent on it;
+		// the roster comes back down as unsolicited 'presence' broadcasts
+		// whenever anyone arrives or leaves.
+		if ( msg.type === 'presence' ) {
+
+			HubPresence_Add( socket, session );
+			Sys_Printf( '%s is in the hub (%d present)\n', session.username, hubPresence.size );
+			return;
+
+		}
+
 		if ( msg.type === 'list' ) {
 
 			const rooms = RoomManager_ListRooms();
@@ -476,6 +553,7 @@ function handleWsConnection( socket, address ) {
 	socket.addEventListener( 'close', () => {
 
 		if ( joinedRoomId !== null ) RoomClients_Remove( joinedRoomId, socket );
+		HubPresence_Remove( socket );
 		if ( roomSocket ) { try { roomSocket.close(); } catch ( e ) { /* ignore */ } }
 
 	} );
@@ -483,6 +561,7 @@ function handleWsConnection( socket, address ) {
 	socket.addEventListener( 'error', () => {
 
 		if ( joinedRoomId !== null ) RoomClients_Remove( joinedRoomId, socket );
+		HubPresence_Remove( socket );
 		if ( roomSocket ) { try { roomSocket.close(); } catch ( e ) { /* ignore */ } }
 
 	} );
