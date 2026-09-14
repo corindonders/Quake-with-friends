@@ -12,6 +12,7 @@ import { COM_FetchPak, COM_AddPack, COM_SetLooseFileBasePath, COM_EnsureFile, CO
 import { Cbuf_Init, Cbuf_Execute, Cmd_Init } from '../src/cmd.js';
 import { Host_InitCommands } from '../src/host_cmd.js';
 import { deathmatch, coop, teamplay, teamcount, samelevel, noexit, sys_ticrate } from '../src/host.js';
+import { Horde_Start, Horde_Think } from '../src/horde.js';
 import { cls, ca_dedicated } from '../src/client.js';
 import { Memory_Init } from '../src/zone.js';
 import { PR_Init } from '../src/pr_edict.js';
@@ -128,14 +129,19 @@ function setCvar(cvar, value) {
 }
 
 /**
- * Translate a hub kiosk mode ('ffa' | 'teams' | 'teams_ai' | 'coop') into the
- * deathmatch/coop/teamplay cvars the progs actually read.
+ * Translate a hub kiosk mode ('ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde')
+ * into the deathmatch/coop/teamplay cvars the progs actually read.
  *
  * 'teams_ai' is deliberately identical to 'teams' for now -- there is no bot
  * spawning yet, so its reserved AI slots simply stay empty.
+ *
+ * 'horde' uses the same non-PvP cvars as 'coop' (survival against monsters,
+ * not other players) -- the wave spawning itself is driven entirely by
+ * src/horde.js (see the Horde_Start call after SV_SpawnServer below), not
+ * by anything QuakeC/progs reads directly.
  */
 function Host_SetMode(mode, teams) {
-	if (mode === 'coop') {
+	if (mode === 'coop' || mode === 'horde') {
 		setCvar(deathmatch, 0);
 		setCvar(coop, 1);
 		setCvar(teamplay, 0);
@@ -323,6 +329,15 @@ async function Host_Init_Server() {
 	await COM_EnsureFile('maps/' + CONFIG.defaultMap + '.bsp');
 	await SV_SpawnServer(CONFIG.defaultMap);
 
+	// Horde mode is a JS-driven wave spawner (src/horde.js), not something
+	// progs/cvars start on their own -- kick it off once the map/server is
+	// up. Horde_Start just arms the countdown to wave 1; the actual spawn
+	// waits for a connected, spawned player (see _pickSpawnOrigin), so this
+	// is safe to call before anyone has joined the room yet.
+	if (CONFIG.mode === 'horde') {
+		Horde_Start();
+	}
+
 	Sys_Printf('\nServer initialized!\n');
 	Sys_Printf('  Port: ' + CONFIG.port + '\n');
 	Sys_Printf('  Max clients: ' + CONFIG.maxClients + '\n');
@@ -389,6 +404,7 @@ function Host_ServerFrame() {
 
 	// Run physics
 	SV_Physics();
+	Horde_Think();
 	const t2 = performance.now();
 
 	// Send messages to all clients

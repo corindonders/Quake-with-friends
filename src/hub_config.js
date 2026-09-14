@@ -26,13 +26,14 @@ export const HUB_KIOSK_RANGE = 96;
 // spawn faces -- open space by construction, whatever map HUB_MAP names.
 export const HUB_KIOSK_SPAWN_OFFSET = 72;
 
-export const HUB_MODES = [ 'ffa', 'teams', 'teams_ai', 'coop' ];
+export const HUB_MODES = [ 'ffa', 'teams', 'teams_ai', 'coop', 'horde' ];
 
 export const HUB_MODE_TITLES = {
 	ffa: 'Free-for-all',
 	teams: 'Team vs Team',
 	teams_ai: 'Team vs AI',
 	coop: 'Co-op',
+	horde: 'Horde',
 };
 
 export const HUB_MAX_TEAMS = 4;

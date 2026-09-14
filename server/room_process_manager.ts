@@ -25,7 +25,7 @@ interface RoomProcess {
 	lastOutputTime: number;  // Last stdout/stderr line seen from room process
 	lastWatchdogTime: number; // Last watchdog tick seen from room stderr
 	persistent: boolean; // exempt from idle cleanup (e.g. the hub)
-	mode: string; // 'ffa' | 'teams' | 'teams_ai' | 'coop' -- see src/hub_config.js
+	mode: string; // 'ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde' -- see src/hub_config.js
 	teamCount: number; // teams to split players across, 0 for non-team modes
 }
 
