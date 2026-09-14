@@ -25,8 +25,7 @@
 import { Con_Printf, Con_DPrintf, SZ_Clear, SZ_Write } from './common.js';
 import { NET_NewQSocket, NET_FreeQSocket } from './net_main.js';
 import { net_message } from './net.js';
-import { M_ConnectionError, M_Menu_Main_f } from './menu.js';
-import { set_key_dest, key_menu } from './keys.js';
+import { M_ConnectionError } from './menu.js';
 import { Cbuf_AddText } from './cmd.js';
 
 let ws_initialized = false;
@@ -79,10 +78,8 @@ function WS_ScheduleReconnect() {
 
 	if ( reconnectAttempt >= MAX_RECONNECT_ATTEMPTS ) {
 
-		Con_Printf( 'Could not reconnect after ' + MAX_RECONNECT_ATTEMPTS + ' attempts. Use the menu to try again.\n' );
+		Con_Printf( 'Could not reconnect after ' + MAX_RECONNECT_ATTEMPTS + ' attempts.\n' );
 		WS_CancelReconnect();
-		M_Menu_Main_f();
-		set_key_dest( key_menu );
 		return;
 
 	}
@@ -538,9 +535,7 @@ export async function WS_Connect( host ) {
 
 		}
 
-		M_Menu_Main_f();
-		set_key_dest( key_menu );
-
+		Con_Printf( 'Connection failed. Check the console for details.\n' );
 		return null;
 
 	}

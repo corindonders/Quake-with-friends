@@ -43,7 +43,6 @@ import { pr_global_struct } from './progs.js';
 import { vid, d_8to24table, renderer } from './vid.js';
 import { V_RenderView, V_UpdatePalette } from './view.js';
 import { S_LocalSound } from './snd_dma.js';
-import { M_Menu_Main_f } from './menu.js';
 import { R_Efrag_SetExternals } from './gl_refrag.js';
 import { Host_InitCommands } from './host_cmd.js';
 import { R_SetParticleExternals } from './r_part.js';
@@ -378,7 +377,6 @@ export async function Host_Init( parms ) {
 		Draw_ConsoleBackground: Draw_ConsoleBackground,
 		SCR_UpdateScreen: SCR_UpdateScreen,
 		SCR_EndLoadingPlaque: SCR_EndLoadingPlaque,
-		M_Menu_Main_f: M_Menu_Main_f,
 		S_LocalSound: S_LocalSound,
 		getRealtime: () => realtime,
 		developer: developer
