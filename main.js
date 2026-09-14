@@ -17,6 +17,7 @@ import { scene, camera } from './src/gl_rmain.js';
 import { renderer } from './src/vid.js';
 import { Draw_CachePicFromPNG } from './src/gl_draw.js';
 import { XR_Init } from './src/webxr.js';
+import { CSS3D_Init, CSS3D_Render } from './src/css3d_layer.js';
 
 const parms = {
 	basedir: '.',
@@ -143,6 +144,7 @@ async function main() {
 		}
 
 		TravelUI_Init( modDirs );
+		CSS3D_Init();
 		HubKiosk_Init();
 
 		// Preload custom menu images
@@ -224,6 +226,7 @@ async function main() {
 
 			Host_Frame( time );
 			HubKiosk_Frame();
+			CSS3D_Render( camera );
 
 		} );
 

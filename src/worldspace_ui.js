@@ -19,9 +19,9 @@
 //   // In game loop: trigger.frame();
 
 import * as THREE from 'three';
-import { Con_Printf } from './common.js';
 import { cl, cls, ca_connected } from './client.js';
 import { r_refdef } from './render.js';
+import { css3dScene, CSS3DObject } from './css3d_layer.js';
 
 export class WorldspaceUITrigger {
 
@@ -224,26 +224,52 @@ export class WorldspaceUITrigger {
 }
 
 /**
- * Helper to manage a DOM panel associated with a worldspace UI trigger.
- * Handles visibility toggling and keyboard dismissal (Escape key).
+ * A DOM panel positioned and oriented as part of the 3D scene, via the
+ * CSS3D render layer (see css3d_layer.js), instead of a flat fixed overlay.
+ * The element keeps working exactly like normal DOM (selects, buttons,
+ * clicks) -- only its screen position/rotation/scale are driven by its
+ * transform in the world.
+ *
+ * This engine keeps the raw Quake coordinate scene throughout (see
+ * gl_rmain.js R_SetupGL) -- Z is up, not Y -- so `object.up` is set to
+ * (0,0,1) before orienting, matching every other worldspace position in
+ * this codebase.
  */
-export class WorldspaceUIPanel {
+export class WorldspaceUIPanel3D {
 
 	constructor( options ) {
 
 		this.element = options.element;
+		this.scale = options.scale || 0.15; // world units per CSS pixel
 		this.showPrompt = options.showPrompt || (() => {});
 		this.hidePrompt = options.hidePrompt || (() => {});
 
+		this.object = new CSS3DObject( this.element );
+		this.object.up.set( 0, 0, 1 );
+		this.object.scale.set( this.scale, this.scale, this.scale );
+
+		this.visible = false;
 		this.keydownHandler = null;
+
+	}
+
+	/**
+	 * Position the panel and turn its readable side to face `facingPoint`
+	 * (e.g. the spot a player stands at while interacting with it).
+	 */
+	setTransform( position, facingPoint ) {
+
+		this.object.position.set( ...position );
+		this.object.lookAt( ...facingPoint );
 
 	}
 
 	show() {
 
-		if ( ! this.element ) return;
+		if ( this.visible ) return;
+		this.visible = true;
 
-		this.element.hidden = false;
+		css3dScene.add( this.object );
 		this.showPrompt();
 
 		// Register dismiss handler
@@ -251,7 +277,7 @@ export class WorldspaceUIPanel {
 
 			this.keydownHandler = (event) => {
 
-				if ( event.key === 'Escape' && ! this.element.hidden ) {
+				if ( event.key === 'Escape' && this.visible ) {
 
 					this.hide();
 
@@ -267,9 +293,10 @@ export class WorldspaceUIPanel {
 
 	hide() {
 
-		if ( ! this.element ) return;
+		if ( ! this.visible ) return;
+		this.visible = false;
 
-		this.element.hidden = true;
+		css3dScene.remove( this.object );
 		this.hidePrompt();
 
 		// Unregister dismiss handler

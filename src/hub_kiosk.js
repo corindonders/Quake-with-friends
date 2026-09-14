@@ -5,19 +5,26 @@
 // the way a group decides where to go next; travel_ui.js still works as the
 // solo escape hatch.
 //
-// The panel itself is plain DOM, same styling vocabulary as travel_ui.js.
-// Uses the generic WorldspaceUITrigger framework for the interaction system.
+// The panel is plain DOM (same styling vocabulary as travel_ui.js) but is
+// positioned and oriented as an actual object in the 3D scene via
+// WorldspaceUIPanel3D/CSS3DRenderer, not a flat screen-space overlay --
+// walking around it changes what you see, same as any other prop.
 
-import { Con_Printf } from './common.js';
 import { fetchMapdb } from './auth_client.js';
 import { WS_SendHubStart } from './net_websocket.js';
 import { cl } from './client.js';
 import { scene } from './gl_rmain.js';
-import { WorldspaceUITrigger, WorldspaceUIPanel } from './worldspace_ui.js';
+import { WorldspaceUITrigger, WorldspaceUIPanel3D } from './worldspace_ui.js';
 import {
 	HUB_MAP, HUB_MODES, HUB_MODE_TITLES, HUB_MAX_TEAMS,
 	HUB_KIOSK_RANGE, HUB_KIOSK_SPAWN_OFFSET,
 } from './hub_config.js';
+
+// How far past the trigger box (along the same spawn-forward direction) the
+// panel sits, and how high above the floor -- keeps it clear of the box
+// geometry and roughly at eye level rather than floating at ankle height.
+const PANEL_FORWARD_OFFSET = 28;
+const PANEL_HEIGHT_OFFSET = 40;
 
 let trigger = null;
 let panel = null;
@@ -55,9 +62,14 @@ function FindPlayerStart( entities ) {
 }
 
 /**
- * Calculate kiosk position based on the map's spawn point.
+ * Work out where the kiosk trigger and its panel belong, based on the map's
+ * spawn point: both sit along the direction the spawn faces (open space by
+ * construction, whichever map is standing in as the hub -- see
+ * hub_config.js), with the panel a bit further out and higher than the
+ * trigger box, facing back toward the spawn point so a player walking up
+ * from it sees the panel's readable side.
  */
-function CalculateKioskPosition() {
+function CalculateKioskLayout() {
 
 	const world = cl.worldmodel;
 	if ( world == null ) return null;
@@ -68,13 +80,29 @@ function CalculateKioskPosition() {
 	const start = FindPlayerStart( world.entities );
 	if ( start === null ) return null;
 
-	// Push it out along the way the spawn faces
 	const yaw = start.angle * Math.PI / 180;
-	const x = start.origin[ 0 ] + Math.cos( yaw ) * HUB_KIOSK_SPAWN_OFFSET;
-	const y = start.origin[ 1 ] + Math.sin( yaw ) * HUB_KIOSK_SPAWN_OFFSET;
-	const z = start.origin[ 2 ];
+	const dirX = Math.cos( yaw );
+	const dirY = Math.sin( yaw );
 
-	return [ x, y, z ];
+	const triggerPos = [
+		start.origin[ 0 ] + dirX * HUB_KIOSK_SPAWN_OFFSET,
+		start.origin[ 1 ] + dirY * HUB_KIOSK_SPAWN_OFFSET,
+		start.origin[ 2 ],
+	];
+
+	const panelPos = [
+		start.origin[ 0 ] + dirX * ( HUB_KIOSK_SPAWN_OFFSET + PANEL_FORWARD_OFFSET ),
+		start.origin[ 1 ] + dirY * ( HUB_KIOSK_SPAWN_OFFSET + PANEL_FORWARD_OFFSET ),
+		start.origin[ 2 ] + PANEL_HEIGHT_OFFSET,
+	];
+
+	const facingPoint = [
+		start.origin[ 0 ],
+		start.origin[ 1 ],
+		start.origin[ 2 ] + PANEL_HEIGHT_OFFSET,
+	];
+
+	return { triggerPos, panelPos, facingPoint };
 
 }
 
@@ -171,7 +199,8 @@ export function HubKiosk_Init() {
 			border-radius: 5px; padding: 6px 12px; font-size: 13px; pointer-events: none;
 		}
 		#tq-kiosk-panel {
-			position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 52;
+			/* Position/rotation/scale come from WorldspaceUIPanel3D (CSS3DObject) --
+			   this element lives in the 3D scene, not screen space. */
 			width: 300px;
 			font-family: 'Trebuchet MS', 'Segoe UI', Verdana, sans-serif;
 			background: #171310; border: 1px solid #332920; border-radius: 8px; padding: 14px;
@@ -199,10 +228,12 @@ export function HubKiosk_Init() {
 	promptEl.hidden = true;
 	document.body.appendChild( promptEl );
 
-	// Create panel element (shown when interacting)
+	// Create panel element (shown when interacting). Visibility is driven
+	// entirely by whether WorldspaceUIPanel3D has added it to the CSS3D
+	// scene, not by the `hidden` attribute -- leave it unset so the element
+	// isn't display:none the moment it gets inserted on show().
 	panelEl = document.createElement( 'div' );
 	panelEl.id = 'tq-kiosk-panel';
-	panelEl.hidden = true;
 
 	const modeOptions = HUB_MODES
 		.map( ( mode ) => '<option value="' + mode + '">' + HUB_MODE_TITLES[ mode ] + '</option>' )
@@ -217,17 +248,40 @@ export function HubKiosk_Init() {
 		'<div class="tq-kiosk-row tq-kiosk-team-row" hidden><label>Teams</label><select class="tq-kiosk-teams">' + teamOptions + '</select></div>' +
 		'<button class="tq-kiosk-start">Start</button>' +
 		'<div class="tq-kiosk-status"></div>';
-	document.body.appendChild( panelEl );
+	// Not appended to the document here: WorldspaceUIPanel3D's CSS3DObject
+	// inserts it into the CSS3D render layer once shown, and removes it on
+	// hide (see css3d_layer.js) -- leaving it detached until then keeps it
+	// from flashing onto the page in the wrong (screen-space) spot.
 
 	// Wire up panel events
 	panelEl.querySelector( '.tq-kiosk-mode' ).addEventListener( 'change', syncTeamRow );
 	panelEl.querySelector( '.tq-kiosk-start' ).addEventListener( 'click', startMatch );
 
-	// Create the worldspace trigger
+	// Create the panel: a real object in the 3D scene, positioned/oriented
+	// by CalculateKioskLayout() below whenever the map (re)loads.
+	panel = new WorldspaceUIPanel3D( {
+		element: panelEl,
+		scale: 0.15, // 300px-wide panel -> 45 world units, ~1.4x player width
+		showPrompt: () => {
+
+			// Request pointer lock when showing panel
+			if ( document.exitPointerLock ) document.exitPointerLock();
+			renderPanel().then( syncTeamRow ).catch( ( e ) => setStatus( 'Failed: ' + e.message, true ) );
+
+		},
+		hidePrompt: () => {
+
+			// No special action needed on hide
+
+		},
+	} );
+
+	// Create the worldspace trigger (the box a player walks up to and
+	// presses E on). Position gets filled in below, once per map load.
 	trigger = new WorldspaceUITrigger( {
 		world: cl.worldmodel,
 		scene: scene,
-		position: [ 0, 0, 0 ], // will be updated in onProximityEnter
+		position: [ 0, 0, 0 ],
 		range: HUB_KIOSK_RANGE,
 		color: 0xb23b2e,
 		size: { width: 32, height: 32, depth: 64 },
@@ -248,43 +302,35 @@ export function HubKiosk_Init() {
 		},
 	} );
 
-	// Recalculate position when entering proximity
-	const originalProximityEnter = trigger.onProximityEnter;
-	trigger.onProximityEnter = () => {
+	// Lay out the trigger box and panel together whenever the trigger
+	// (re)places its mesh for a newly-loaded world -- both derive from the
+	// same spawn point, so they need to move in lockstep. Only the hub map
+	// gets a kiosk at all (CalculateKioskLayout returns null everywhere
+	// else), so this also has to override place() rather than just
+	// patching the position afterward -- the base implementation doesn't
+	// know which maps should have no trigger at all.
+	const originalPlace = trigger.place.bind( trigger );
+	const originalRemove = trigger.remove.bind( trigger );
 
-		// Update trigger position based on current map spawn point
-		const pos = CalculateKioskPosition();
-		if ( pos ) {
+	trigger.place = () => {
 
-			trigger.position = pos;
-			if ( trigger.mesh ) {
+		const layout = CalculateKioskLayout();
 
-				trigger.mesh.position.set( ...pos );
+		if ( layout === null ) {
 
-			}
+			originalRemove();
+			panel.hide();
+			return;
 
 		}
 
-		originalProximityEnter();
+		trigger.position = layout.triggerPos;
+		originalPlace();
+		if ( trigger.mesh ) trigger.mesh.position.set( ...layout.triggerPos );
+
+		panel.setTransform( layout.panelPos, layout.facingPoint );
 
 	};
-
-	// Create the panel helper
-	panel = new WorldspaceUIPanel( {
-		element: panelEl,
-		showPrompt: () => {
-
-			// Request pointer lock when showing panel
-			if ( document.exitPointerLock ) document.exitPointerLock();
-			renderPanel().then( syncTeamRow ).catch( ( e ) => setStatus( 'Failed: ' + e.message, true ) );
-
-		},
-		hidePrompt: () => {
-
-			// No special action needed on hide
-
-		},
-	} );
 
 	// Register the trigger's keyboard handler
 	trigger.registerKeyHandler();

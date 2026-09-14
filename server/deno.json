@@ -18,6 +18,7 @@
 		"three/addons/postprocessing/RenderPass.js": "./postprocess_addon_shim.js",
 		"three/addons/postprocessing/ShaderPass.js": "./postprocess_addon_shim.js",
 		"three/addons/postprocessing/OutputPass.js": "./postprocess_addon_shim.js",
-		"three/addons/shaders/FXAAShader.js": "./postprocess_addon_shim.js"
+		"three/addons/shaders/FXAAShader.js": "./postprocess_addon_shim.js",
+		"three/addons/renderers/CSS3DRenderer.js": "./css3d_addon_shim.js"
 	}
 }
