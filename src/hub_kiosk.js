@@ -16,95 +16,15 @@ import { cl } from './client.js';
 import { scene } from './gl_rmain.js';
 import { WorldspaceUITrigger, WorldspaceUIPanel3D } from './worldspace_ui.js';
 import {
-	HUB_MAP, HUB_MODES, HUB_MODE_TITLES, HUB_MAX_TEAMS,
-	HUB_KIOSK_RANGE, HUB_KIOSK_SPAWN_OFFSET,
+	HUB_MAP, HUB_MODES, HUB_MODE_TITLES, HUB_MAX_TEAMS, HUB_KIOSK_RANGE,
+	HUB_KIOSK_POSITION, HUB_KIOSK_PANEL_POSITION, HUB_KIOSK_PANEL_FACING,
 } from './hub_config.js';
-
-// How far past the trigger box (along the same spawn-forward direction) the
-// panel sits, and how high above the floor -- keeps it clear of the box
-// geometry and roughly at eye level rather than floating at ankle height.
-const PANEL_FORWARD_OFFSET = 28;
-const PANEL_HEIGHT_OFFSET = 40;
 
 let trigger = null;
 let panel = null;
 let panelEl = null;
 let promptEl = null;
 let mapdbCache = null;
-
-/**
- * Pull the first info_player_start out of a compiled map's entity lump.
- * The hub map isn't purpose-built (no kiosk entity to read a spot from --
- * see src/hub_config.js), so this is what anchors the kiosk trigger.
- */
-function FindPlayerStart( entities ) {
-
-	if ( typeof entities !== 'string' ) return null;
-
-	for ( const block of entities.split( '}' ) ) {
-
-		if ( ! block.includes( '"info_player_start"' ) ) continue;
-
-		const origin = block.match( /"origin"\s+"([^"]+)"/ );
-		if ( origin === null ) continue;
-
-		const parts = origin[ 1 ].trim().split( /\s+/ ).map( Number );
-		if ( parts.length < 3 || parts.some( isNaN ) ) continue;
-
-		const angle = block.match( /"angle"\s+"([^"]+)"/ );
-
-		return { origin: parts, angle: angle === null ? 0 : Number( angle[ 1 ] ) || 0 };
-
-	}
-
-	return null;
-
-}
-
-/**
- * Work out where the kiosk trigger and its panel belong, based on the map's
- * spawn point: both sit along the direction the spawn faces (open space by
- * construction, whichever map is standing in as the hub -- see
- * hub_config.js), with the panel a bit further out and higher than the
- * trigger box, facing back toward the spawn point so a player walking up
- * from it sees the panel's readable side.
- */
-function CalculateKioskLayout() {
-
-	const world = cl.worldmodel;
-	if ( world == null ) return null;
-
-	// Only the hub gets a kiosk
-	if ( world.name !== 'maps/' + HUB_MAP + '.bsp' ) return null;
-
-	const start = FindPlayerStart( world.entities );
-	if ( start === null ) return null;
-
-	const yaw = start.angle * Math.PI / 180;
-	const dirX = Math.cos( yaw );
-	const dirY = Math.sin( yaw );
-
-	const triggerPos = [
-		start.origin[ 0 ] + dirX * HUB_KIOSK_SPAWN_OFFSET,
-		start.origin[ 1 ] + dirY * HUB_KIOSK_SPAWN_OFFSET,
-		start.origin[ 2 ],
-	];
-
-	const panelPos = [
-		start.origin[ 0 ] + dirX * ( HUB_KIOSK_SPAWN_OFFSET + PANEL_FORWARD_OFFSET ),
-		start.origin[ 1 ] + dirY * ( HUB_KIOSK_SPAWN_OFFSET + PANEL_FORWARD_OFFSET ),
-		start.origin[ 2 ] + PANEL_HEIGHT_OFFSET,
-	];
-
-	const facingPoint = [
-		start.origin[ 0 ],
-		start.origin[ 1 ],
-		start.origin[ 2 ] + PANEL_HEIGHT_OFFSET,
-	];
-
-	return { triggerPos, panelPos, facingPoint };
-
-}
 
 function setStatus( text, isError ) {
 
@@ -302,21 +222,20 @@ export function HubKiosk_Init() {
 		},
 	} );
 
-	// Lay out the trigger box and panel together whenever the trigger
-	// (re)places its mesh for a newly-loaded world -- both derive from the
-	// same spawn point, so they need to move in lockstep. Only the hub map
-	// gets a kiosk at all (CalculateKioskLayout returns null everywhere
-	// else), so this also has to override place() rather than just
-	// patching the position afterward -- the base implementation doesn't
-	// know which maps should have no trigger at all.
+	// Lay out the trigger box and panel at their fixed HUB_MAP coordinates
+	// (see hub_config.js) whenever the trigger (re)places its mesh for a
+	// newly-loaded world. Only the hub map gets a kiosk at all, so this also
+	// has to override place() rather than just patching the position
+	// afterward -- the base implementation doesn't know which maps should
+	// have no trigger.
 	const originalPlace = trigger.place.bind( trigger );
 	const originalRemove = trigger.remove.bind( trigger );
 
 	trigger.place = () => {
 
-		const layout = CalculateKioskLayout();
+		const world = cl.worldmodel;
 
-		if ( layout === null ) {
+		if ( world == null || world.name !== 'maps/' + HUB_MAP + '.bsp' ) {
 
 			originalRemove();
 			panel.hide();
@@ -324,11 +243,11 @@ export function HubKiosk_Init() {
 
 		}
 
-		trigger.position = layout.triggerPos;
+		trigger.position = HUB_KIOSK_POSITION;
 		originalPlace();
-		if ( trigger.mesh ) trigger.mesh.position.set( ...layout.triggerPos );
+		if ( trigger.mesh ) trigger.mesh.position.set( ...HUB_KIOSK_POSITION );
 
-		panel.setTransform( layout.panelPos, layout.facingPoint );
+		panel.setTransform( HUB_KIOSK_PANEL_POSITION, HUB_KIOSK_PANEL_FACING );
 
 	};
 

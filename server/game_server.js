@@ -285,8 +285,13 @@ async function Host_Init_Server() {
 		Sys_Printf('Loaded %s\n', extraPakPath);
 	}
 
-	// Set base path for on-demand loose file loading (custom maps not in PAK)
-	COM_SetLooseFileBasePath('/opt/three-quake/');
+	// Set base path for on-demand loose file loading (custom maps not in PAK).
+	// Relative, not a hardcoded absolute path: room_process_manager.ts always
+	// spawns this process with cwd set to server/ (see its `cwd: serverDir`),
+	// regardless of where the repo is checked out, so '../' -> repo root
+	// works the same in local dev as in a production deploy -- matching how
+	// CONFIG.pakPath's own default ('../pak0.pak') already resolves pak0.
+	COM_SetLooseFileBasePath('../');
 
 	// Layer any mod dirs onto the search path (paks, progs.dat override, loose
 	// files) -- same mechanism and wire format (comma-separated mods/<name>

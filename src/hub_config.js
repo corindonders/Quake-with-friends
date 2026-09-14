@@ -3,16 +3,19 @@
 // player starts a match. Imported by both the browser client and the Deno
 // lobby (server/lobby_server.js), so it must stay dependency-free.
 //
-// HUB_MAP is the one place the hub's world is chosen. It is still Copper's
-// own "start" map rather than the purpose-built "skybox + floor + kiosk"
-// level the design calls for: this repo ships map *sources* (.map) but no
-// compiler tooling (no qbsp/light/vis binaries), so a new minimal .bsp
-// can't be built here and hand-authoring a .bsp binary isn't reasonable.
-// Once a real hub .bsp exists, dropping it in maps/ and changing HUB_MAP
+// HUB_MAP is the one place the hub's world is chosen. It's still not the
+// purpose-built "skybox + floor + kiosk" level the design calls for -- this
+// repo ships map *sources* (.map) but no compiler tooling (no qbsp/light/vis
+// binaries), so a new minimal .bsp can't be authored here -- but per v1 build
+// order item 6, it's now a deliberately chosen existing map rather than a
+// placeholder: the Q30 Deathmatch Jam pack's own map-select hub (see
+// mapdb.json's "q30__start" entry), a single open rotunda with real floor
+// space around its one info_player_start, no monsters. Once a real
+// purpose-built hub .bsp exists, dropping it in maps/ and changing HUB_MAP
 // (plus HUB_MOD, if it needs no mod) is the whole swap.
 
 export const HUB_ROOM_ID = 'HUBWLD';
-export const HUB_MAP = 'start';
+export const HUB_MAP = 'q30__start';
 export const HUB_MOD = 'mods/copper';
 export const HUB_MAX_PLAYERS = 16;
 
@@ -20,11 +23,18 @@ export const HUB_MAX_PLAYERS = 16;
 // appears. Roughly two player widths.
 export const HUB_KIOSK_RANGE = 96;
 
-// Where the kiosk stands. Since the hub map isn't purpose-built (see above)
-// there's no kiosk entity in it, so the client derives the spot at runtime:
-// the map's info_player_start, pushed this far along the direction that
-// spawn faces -- open space by construction, whatever map HUB_MAP names.
-export const HUB_KIOSK_SPAWN_OFFSET = 72;
+// Where the kiosk trigger box and its panel sit, and which direction the
+// panel faces -- fixed world coordinates in HUB_MAP, not derived from the
+// map's info_player_start at runtime (that regex-based approach is what
+// this replaces, see git history on hub_kiosk.js/worldspace_ui.js). Chosen
+// by hand: q30__start's info_player_start sits at (-64, 472, 152) facing
+// south (angle 270); these sit ~1-1.5 player-widths west of it, off to the
+// side of the main path into the rotunda rather than blocking it, on
+// flat confirmed-solid floor (checked in-engine, well short of the lava
+// ringing the platform's east and south edges).
+export const HUB_KIOSK_POSITION = [ -136, 472, 152 ];
+export const HUB_KIOSK_PANEL_POSITION = [ -164, 472, 192 ];
+export const HUB_KIOSK_PANEL_FACING = [ -64, 472, 192 ];
 
 export const HUB_MODES = [ 'ffa', 'teams', 'teams_ai', 'coop', 'horde' ];
 
