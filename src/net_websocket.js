@@ -106,28 +106,8 @@ export function WS_SetAuthToken( token ) {
 
 }
 
-/*
-=============
-Hub control channel
-
-The gameplay connection keeps carrying text frames after the join: that's
-how the in-world kiosk (src/hub_kiosk.js) sends HUB_START_MAP up to the
-lobby, and how the lobby's TRAVEL_TO broadcast -- "everyone in the hub, go
-to this room now" -- comes back down. No second connection, and nothing the
-Quake protocol itself has to know about.
-=============
-*/
-
 let ws_gameConn = null; // the live gameplay connection, if any
-let ws_travelHandler = null;
-let ws_hubStartFailedHandler = null;
 let ws_connectionLostHandler = null;
-
-export function WS_SetTravelHandler( handler ) {
-
-	ws_travelHandler = handler;
-
-}
 
 // Fires once the auto-reconnect loop below finally gives up on a connection
 // (retries exhausted, or an initial/retry connect attempt failed outright)
@@ -136,37 +116,12 @@ export function WS_SetTravelHandler( handler ) {
 // timeout, ...) looks identical to a network blip from here, so this fires
 // for both, and it's up to the handler (travel_ui.js) to decide where that
 // leaves the player. Called with (host, error): `host` is the URL that
-// failed, so the handler can tell "the hub itself is unreachable" apart
-// from "some other room died" and avoid looping back into the same
-// failure; `error.authFailure` is true when the token itself was the
-// problem (expired/revoked/never valid) -- falling back to the hub with
-// that same bad token would just fail again, so the handler needs to send
-// the player to login.html instead.
+// failed; `error.authFailure` is true when the token itself was the
+// problem (expired/revoked/never valid) -- the handler sends the player to
+// login.html instead of the hub in that case.
 export function WS_SetConnectionLostHandler( handler ) {
 
 	ws_connectionLostHandler = handler;
-
-}
-
-// Lets the kiosk panel (src/hub_kiosk.js) show *why* a HUB_START_MAP it
-// sent got rejected (no map picked, room limit reached, ...) instead of
-// leaving the panel stuck on "Starting..." with no explanation -- see
-// WS_SendHubStart below and the HUB_START_FAILED handling further down.
-export function WS_SetHubStartFailedHandler( handler ) {
-
-	ws_hubStartFailedHandler = handler;
-
-}
-
-export function WS_SendHubStart( config ) {
-
-	if ( ws_gameConn == null || ws_gameConn.socket.readyState !== WebSocket.OPEN ) {
-
-		throw new Error( 'Not connected' );
-
-	}
-
-	ws_gameConn.socket.send( JSON.stringify( { type: 'HUB_START_MAP', config } ) );
 
 }
 
@@ -496,27 +451,13 @@ export async function WS_Connect( host ) {
 
 		} );
 
-		// Now in game-data mode: binary frames are Quake packets.
+		// Now in game-data mode: binary frames are Quake packets. No control
+		// messages arrive over this connection anymore -- "start together"
+		// is hub.html's job, decided before this connection even opens -- so
+		// a stray text frame here is unexpected; ignore it rather than error.
 		socket.addEventListener( 'message', ( event ) => {
 
-			if ( typeof event.data === 'string' ) {
-
-				let control;
-				try { control = JSON.parse( event.data ); } catch ( e ) { return; }
-
-				if ( control.type === 'TRAVEL_TO' && ws_travelHandler != null ) {
-
-					ws_travelHandler( control );
-
-				} else if ( control.type === 'HUB_START_FAILED' ) {
-
-					Con_Printf( 'Could not start the match: ' + control.error + '\n' );
-					if ( ws_hubStartFailedHandler != null ) ws_hubStartFailedHandler( control.error );
-
-				}
-				return;
-
-			}
+			if ( typeof event.data === 'string' ) return;
 
 			const bytes = new Uint8Array( event.data );
 			if ( bytes.length < 1 ) return;

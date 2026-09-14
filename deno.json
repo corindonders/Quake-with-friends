@@ -6,8 +6,7 @@
 		"three/addons/postprocessing/RenderPass.js": "./server/postprocess_addon_shim.js",
 		"three/addons/postprocessing/ShaderPass.js": "./server/postprocess_addon_shim.js",
 		"three/addons/postprocessing/OutputPass.js": "./server/postprocess_addon_shim.js",
-		"three/addons/shaders/FXAAShader.js": "./server/postprocess_addon_shim.js",
-		"three/addons/renderers/CSS3DRenderer.js": "./server/css3d_addon_shim.js"
+		"three/addons/shaders/FXAAShader.js": "./server/postprocess_addon_shim.js"
 	},
 	"tasks": {
 		"server": "deno run --allow-net --allow-read --unstable-net game_server.js"

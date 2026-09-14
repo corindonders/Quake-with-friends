@@ -69,7 +69,7 @@ const CONFIG = {
 	mod: '',              // Comma-separated mod dirs, e.g. "mods/copper,mods/frogsbog_v1/copper"
 	roomId: null,        // Room ID if spawned by lobby server
 	idleTimeout: 300,    // Seconds to wait before exiting when empty (room mode)
-	mode: 'ffa',         // Game mode from the hub kiosk, see src/hub_config.js
+	mode: 'ffa',         // Game mode chosen when the hub started this room (server/lobby_server.js)
 	teamCount: 2,        // Teams to split players across in the team modes
 };
 
@@ -129,7 +129,7 @@ function setCvar(cvar, value) {
 }
 
 /**
- * Translate a hub kiosk mode ('ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde')
+ * Translate a hub-chosen mode ('ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde')
  * into the deathmatch/coop/teamplay cvars the progs actually read.
  *
  * 'teams_ai' is deliberately identical to 'teams' for now -- there is no bot
@@ -246,7 +246,7 @@ async function Host_Init_Server() {
 	SV_Init();
 	PlayerProgress_Init();
 
-	// Apply the game mode the hub kiosk picked. Every mode still sets one of
+	// Apply the game mode the hub picked. Every mode still sets one of
 	// deathmatch/coop, which is what keeps respawn() from restarting the
 	// whole server. We set values directly on the imported cvar objects
 	// (same objects sv_main.js and the progs use).

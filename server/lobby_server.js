@@ -48,10 +48,6 @@ import {
 	createRoomTicket,
 } from './auth.ts';
 import { listMaps, getMap, setMap, deleteMap } from './mapdb.ts';
-import {
-	HUB_ROOM_ID, HUB_MAP, HUB_MOD, HUB_MAX_PLAYERS,
-	Hub_NormalizeModeConfig, Hub_RoomIdForConfig,
-} from '../src/hub_config.js';
 
 // Server configuration
 const CONFIG = {
@@ -195,6 +191,28 @@ function HubPresence_Remove( socket ) {
 
 }
 
+/**
+ * Tell everyone on the hub page right now to navigate into the room that
+ * was just created for them -- the "host starts for all" moment. Each
+ * hub.html client turns this into a fresh navigation to
+ * `index.html?room=...&map=...`; that page load is itself what leaves the
+ * hub (closing this socket), so there's nothing to clean up here. mapId
+ * rides along too -- it's a brand new page, not the same running client the
+ * old in-world kiosk broadcast reached, so it can't already know which
+ * mod dirs the level needs without being told again.
+ */
+function HubPresence_BroadcastStart( roomId, mapId ) {
+
+	const payload = JSON.stringify( { type: 'start', roomId, mapId } );
+	for ( const socket of hubPresence.keys() ) {
+
+		if ( socket.readyState !== WebSocket.OPEN ) continue;
+		try { socket.send( payload ); } catch ( e ) { /* ignore */ }
+
+	}
+
+}
+
 // ---------------------------------------------------------------------------
 // Login
 // ---------------------------------------------------------------------------
@@ -284,27 +302,9 @@ async function resolveRoomForJoin( rawRoomId ) {
 	const roomId = ( rawRoomId || '' ).trim().toUpperCase();
 	let room = RoomManager_GetRoom( roomId );
 
-	// The hub can go missing if its process ever got reaped as unhealthy
-	// (see RoomManager_CleanupUnhealthyRooms, which now recreates it itself,
-	// but a join landing in the gap before that finishes needs the same
-	// fallback) -- it needs its real map/mod/persistent config, not the
-	// generic shared-link fallback below.
-	if ( room === null && roomId === HUB_ROOM_ID ) {
-
-		Sys_Printf( 'Hub room missing on join -- recreating\n' );
-		await RoomManager_CreateRoom( {
-			map: HUB_MAP,
-			mod: HUB_MOD,
-			maxPlayers: HUB_MAX_PLAYERS,
-			hostName: 'Hub',
-			specificId: HUB_ROOM_ID,
-			persistent: true,
-		} );
-		room = RoomManager_GetRoom( HUB_ROOM_ID );
-
 	// A valid-looking room ID that doesn't exist (e.g. an expired shared
 	// link) gets a fresh default room rather than a dead end.
-	} else if ( room === null && ROOM_ID_PATTERN.test( roomId ) ) {
+	if ( room === null && ROOM_ID_PATTERN.test( roomId ) ) {
 
 		Sys_Printf( 'Auto-creating room for link ID: %s\n', roomId );
 		await RoomManager_CreateRoom( {
@@ -321,45 +321,55 @@ async function resolveRoomForJoin( rawRoomId ) {
 
 }
 
+// Only vanilla episode maps ("vanilla") are single-player-shaped by design
+// (scripted intro/outro, not built with extra players in mind); everything
+// else in the catalog -- mod campaigns, standalone customs -- is normal
+// Quake level geometry that coop already just works on. "deathmatch" maps
+// are the one category that should never come up as coop: no monsters, no
+// end trigger, built purely for players fighting each other.
+//
+// No mode picker in hub.html on purpose (see DEVELOPMENT.md): the room size
+// already comes from how many people are in the hub when Start is pressed,
+// and the mode comes from what kind of map got picked. One less decision
+// for the group to agree on.
+function hubModeForCategory( category ) {
+
+	return category === 'deathmatch' ? 'ffa' : 'coop';
+
+}
+
 /**
- * The hub kiosk's "Start": resolve (creating if needed) the room that matches
- * the chosen map + mode, then tell everyone standing in the hub to travel
- * there, so the whole group lands in the same match together.
+ * hub.html's "Start": everyone currently on the hub page picks this up as
+ * one group, sized to however many are there when it's pressed. Creates a
+ * fresh room (never reuses one -- two different groups starting the same
+ * map minutes apart shouldn't land in each other's leftover match) and
+ * tells every hub page to navigate there together.
  */
-async function handleHubStart( config ) {
+async function handleHubStart( mapId, playerCount ) {
 
-	const normalized = Hub_NormalizeModeConfig( config );
-	if ( normalized.mapId.length === 0 ) return { error: 'Pick a map first.' };
+	const normalizedMapId = String( mapId || '' ).toLowerCase().replace( /[^a-z0-9_]/g, '' );
+	if ( normalizedMapId.length === 0 ) return { error: 'Pick a map first.' };
 
-	const entry = await getMap( normalized.mapId );
+	const entry = await getMap( normalizedMapId );
 	if ( entry === null ) return { error: 'No such map.' };
 
-	const roomId = Hub_RoomIdForConfig( normalized );
-	const mod = ( entry.layers || [] ).join( ',' );
+	const mode = hubModeForCategory( entry.category );
+	const maxPlayers = Math.max( playerCount, 1 );
 
 	const result = await RoomManager_CreateRoom( {
-		map: normalized.mapId,
-		mod,
-		maxPlayers: normalized.maxPlayers,
+		map: normalizedMapId,
+		mod: ( entry.layers || [] ).join( ',' ),
+		maxPlayers,
 		hostName: 'Hub',
-		specificId: roomId,
-		mode: normalized.mode,
-		teamCount: normalized.teamCount,
+		mode,
 	} );
 
 	if ( result === null ) return { error: 'Server room limit reached. Try again later.' };
 
-	const sent = RoomClients_Broadcast( HUB_ROOM_ID, {
-		type: 'TRAVEL_TO',
-		mapId: normalized.mapId,
-		roomId: result.id,
-		mode: normalized.mode,
-	} );
+	Sys_Printf( 'Hub start: %s (%s) -> room %s for %d player(s)\n',
+		normalizedMapId, mode, result.id, maxPlayers );
 
-	Sys_Printf( 'Hub start: %s (%s) -> room %s, %d player(s) travelling\n',
-		normalized.mapId, normalized.mode, result.id, sent );
-
-	return { ok: true };
+	return { ok: true, roomId: result.id, mapId: normalizedMapId };
 
 }
 
@@ -373,23 +383,10 @@ function handleWsConnection( socket, address ) {
 
 		if ( phase === 'relay' ) {
 
-			// Text frames stay lobby business even after the join -- that's
-			// how the in-world hub kiosk starts a match without opening a
-			// second connection. Everything else is raw game data.
-			if ( typeof event.data === 'string' ) {
-
-				let relayMsg;
-				try { relayMsg = JSON.parse( event.data ); } catch ( e ) { return; }
-
-				if ( relayMsg.type === 'HUB_START_MAP' && joinedRoomId === HUB_ROOM_ID ) {
-
-					const result = await handleHubStart( relayMsg.config );
-					if ( result.error ) socket.send( JSON.stringify( { type: 'HUB_START_FAILED', error: result.error } ) );
-
-				}
-				return;
-
-			}
+			// A joined connection is raw game data only now -- "start
+			// together" is decided on hub.html before this join ever
+			// happens, so a stray text frame here is unexpected.
+			if ( typeof event.data === 'string' ) return;
 
 			if ( roomSocket && roomSocket.readyState === WebSocket.OPEN ) {
 
@@ -431,6 +428,28 @@ function handleWsConnection( socket, address ) {
 
 			HubPresence_Add( socket, session );
 			Sys_Printf( '%s is in the hub (%d present)\n', session.username, hubPresence.size );
+			return;
+
+		}
+
+		// Anyone on the hub page can hit Start -- host-picks-for-everyone,
+		// same as the old in-world kiosk, just triggered from the page
+		// instead of a worldspace panel. Sized to (and only meaningful for)
+		// whoever is present on hub.html *right now*; latecomers after this
+		// fires just missed that group and see an empty hub again once
+		// everyone else's page has navigated away.
+		if ( msg.type === 'start' ) {
+
+			const result = await handleHubStart( msg.mapId, hubPresence.size );
+
+			if ( result.error ) {
+
+				socket.send( JSON.stringify( { type: 'start_failed', error: result.error } ) );
+				return;
+
+			}
+
+			HubPresence_BroadcastStart( result.roomId, result.mapId );
 			return;
 
 		}
@@ -825,12 +844,6 @@ async function handleAdminRequest( req, url ) {
 
 		const roomId = decodeURIComponent( roomMatch[ 1 ] ).toUpperCase();
 
-		if ( roomId === HUB_ROOM_ID ) {
-
-			return _json( { error: 'Can\'t terminate the hub -- it\'ll only come back empty on the next lobby restart.' }, 400 );
-
-		}
-
 		const removed = RoomManager_TerminateRoom( roomId );
 		if ( ! removed ) return _json( { error: 'No such room.' }, 404 );
 
@@ -933,26 +946,8 @@ async function startServer() {
 
 	Deno.serve( serveOptions, buildHandler() );
 
-	// Persistent hub room (map/mod chosen in src/hub_config.js), always
-	// running, exempt from idle cleanup, so there's always somewhere for
-	// players to land and meet before starting a match at the kiosk.
-	const hub = await RoomManager_CreateRoom( {
-		map: HUB_MAP,
-		mod: HUB_MOD,
-		maxPlayers: HUB_MAX_PLAYERS,
-		hostName: 'Hub',
-		specificId: HUB_ROOM_ID,
-		persistent: true,
-	} );
-	if ( hub !== null ) {
-
-		Sys_Printf( 'Hub room ready: %s on port %d\n', hub.id, hub.port );
-
-	} else {
-
-		Sys_Printf( 'WARNING: failed to create hub room\n' );
-
-	}
+	// No persistent hub room to bootstrap -- the hub is hub.html now, a
+	// plain page, not a running game room (see HubPresence above).
 
 	// Start cleanup timer (every 5 minutes)
 	setInterval( () => {

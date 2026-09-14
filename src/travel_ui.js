@@ -1,15 +1,15 @@
-// In-game "Travel" overlay: lets a player leave the hub (or any room) and
-// jump to one of the worlds in the (admin-editable) map catalog. Everyone who picks the
-// same world lands in the same room automatically (see roomIdForMap below),
-// no code-sharing needed -- that's the "load into worlds together" part of
-// the hub.
+// In-game "Travel" overlay: a solo escape hatch that lets a player already
+// inside a match jump to a different world in the (admin-editable) map
+// catalog, without going back through the hub page first. Everyone who
+// picks the same world from here lands in the same room automatically (see
+// roomIdForMap below) -- picking a level *together* is hub.html's job now,
+// this is just for "I'm done here, take me somewhere else."
 
 import { Cbuf_AddText } from './cmd.js';
-import { WS_CreateRoom, WS_SetTravelHandler, WS_SetConnectionLostHandler } from './net_websocket.js';
+import { WS_CreateRoom, WS_SetConnectionLostHandler } from './net_websocket.js';
 import { Con_Printf } from './common.js';
 import { fetchMapdb, logout } from './auth_client.js';
 import { COM_LoadMod } from './pak.js';
-import { HUB_ROOM_ID, HUB_MOD } from './hub_config.js';
 
 let panelEl = null;
 let buttonEl = null;
@@ -79,12 +79,10 @@ function escapeHTML( s ) {
 }
 
 /**
- * Move this client to `mapId`. Two callers: the manual picker below (which
- * derives the room from the map alone), and the hub kiosk's TRAVEL_TO
- * broadcast (see TravelUI_TravelTo), which passes the room the lobby has
- * already created with the chosen game mode attached.
+ * Move this client to `mapId`, solo -- the manual picker below is the only
+ * caller now that group "start together" lives in hub.html instead.
  */
-async function travelTo( mapId, entry, existingRoomId ) {
+async function travelTo( mapId, entry ) {
 
 	const myGeneration = ++travelGeneration;
 
@@ -112,23 +110,16 @@ async function travelTo( mapId, entry, existingRoomId ) {
 		if ( ! lobby ) throw new Error( 'No server configured (server-config.js)' );
 
 		const serverUrl = ( window.location.protocol === 'https:' ? 'https://' : 'http://' ) + lobby;
-		const roomId = existingRoomId || roomIdForMap( mapId );
+		const roomId = roomIdForMap( mapId );
 
-		// The kiosk path's room is already up (and already carries the game
-		// mode) -- creating it again here would only risk replacing it with
-		// a default-mode one.
-		if ( ! existingRoomId ) {
+		await WS_CreateRoom( serverUrl, {
+			map: mapId,
+			mod: ( entry.layers || [] ).join( ',' ),
+			maxPlayers: 16,
+			specificId: roomId,
+		} );
 
-			await WS_CreateRoom( serverUrl, {
-				map: mapId,
-				mod: ( entry.layers || [] ).join( ',' ),
-				maxPlayers: 16,
-				specificId: roomId,
-			} );
-
-			if ( myGeneration !== travelGeneration ) return; // superseded mid-create
-
-		}
+		if ( myGeneration !== travelGeneration ) return; // superseded mid-create
 
 		Cbuf_AddText( 'disconnect\n' );
 		Cbuf_AddText( 'connect "' + serverUrl + '?room=' + roomId + '"\n' );
@@ -199,29 +190,14 @@ function togglePanel() {
 }
 
 /**
- * Travel without the panel, for the hub kiosk's "everyone goes now"
- * broadcast. Looks the destination's catalog entry up itself, since the
- * caller only gets a map id off the wire.
+ * "Leaving a level returns you to the hub" (v1 build order item 7). The hub
+ * is a plain web page now, not a room -- so returning to it is just a page
+ * navigation, no disconnect/reconnect dance needed. cls/sv state doesn't
+ * need cleanup either: the browser's about to tear this whole page down.
  */
-export async function TravelUI_TravelTo( mapId, roomId ) {
+export function TravelUI_ReturnToHub() {
 
-	const mapdb = await loadMapdb();
-	const entry = mapdb[ mapId ] || { title: mapId, layers: [] };
-
-	await travelTo( mapId, entry, roomId );
-
-}
-
-/**
- * "Leaving a level returns you to the hub" (v1 build order item 7): the
- * hub is a known, always-recreatable room (see HUB_ROOM_ID's auto-recreate
- * path in server/lobby_server.js), so unlike a normal destination this
- * never needs WS_CreateRoom -- passing HUB_ROOM_ID as the existing room id
- * makes travelTo skip straight to disconnect/connect.
- */
-export async function TravelUI_ReturnToHub() {
-
-	await travelTo( 'hub', { title: 'the hub', layers: [ HUB_MOD ] }, HUB_ROOM_ID );
+	window.location.href = 'hub.html';
 
 }
 
@@ -229,22 +205,11 @@ export function TravelUI_Init( alreadyLoadedModDirs ) {
 
 	for ( const dir of ( alreadyLoadedModDirs || [] ) ) loadedModDirs.add( dir );
 
-	WS_SetTravelHandler( ( msg ) => {
-
-		TravelUI_TravelTo( msg.mapId, msg.roomId ).catch( ( e ) => {
-
-			Con_Printf( 'Travel failed: ' + e.message + '\n' );
-
-		} );
-
-	} );
-
 	WS_SetConnectionLostHandler( ( failedHost, error ) => {
 
 		// The stored token itself was the problem (expired/revoked/never
-		// valid) -- falling back to the hub would just present that same
-		// bad token again and fail the same way, so there's nothing to do
-		// but clear it and send the player back to log in properly.
+		// valid) -- logging back in is the only way forward, and hub.html's
+		// own login gate handles that once there.
 		if ( error && error.authFailure ) {
 
 			Con_Printf( 'Session expired -- returning to login.\n' );
@@ -253,17 +218,8 @@ export function TravelUI_Init( alreadyLoadedModDirs ) {
 
 		}
 
-		// Don't loop: if the hub itself is what just failed, there's nowhere
-		// further to fall back to -- let it sit disconnected rather than
-		// hammering a hub that's unreachable.
-		if ( typeof failedHost === 'string' && failedHost.includes( 'room=' + HUB_ROOM_ID ) ) return;
-
-		Con_Printf( 'Returning to the hub...\n' );
-		TravelUI_ReturnToHub().catch( ( e ) => {
-
-			Con_Printf( 'Could not return to the hub: ' + e.message + '\n' );
-
-		} );
+		Con_Printf( 'Connection lost -- returning to the hub.\n' );
+		TravelUI_ReturnToHub();
 
 	} );
 

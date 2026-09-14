@@ -25,7 +25,7 @@ interface RoomProcess {
 	lastOutputTime: number;  // Last stdout/stderr line seen from room process
 	lastWatchdogTime: number; // Last watchdog tick seen from room stderr
 	persistent: boolean; // exempt from idle cleanup (e.g. the hub)
-	mode: string; // 'ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde' -- see src/hub_config.js
+	mode: string; // 'ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde' -- see server/lobby_server.js's hubModeForCategory
 	teamCount: number; // teams to split players across, 0 for non-team modes
 }
 
@@ -193,7 +193,7 @@ export async function RoomManager_CreateRoom( config: {
 		];
 		if ( safeMod.length > 0 ) args.push( '-mod', safeMod );
 
-		// Game mode picked at the hub kiosk (src/hub_kiosk.js). Unset means
+		// Game mode picked by the hub (server/lobby_server.js). Unset means
 		// the room keeps game_server.js's own default (free-for-all).
 		const safeMode = ( config.mode || '' ).replace( /[^a-z_]/g, '' );
 		const teamCount = Number( config.teamCount ) > 0 ? Math.floor( Number( config.teamCount ) ) : 0;

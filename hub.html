@@ -79,22 +79,20 @@
 			width: 56px;
 			height: 56px;
 			border-radius: 6px;
-			background: var(--avatar, #3a2f26);
+			background-color: #201a15;
+			background-image: url('icons/face1.png');
+			background-repeat: no-repeat;
+			background-position: center;
+			background-size: 42px 42px;
+			image-rendering: pixelated;
 			border: 1px solid rgba(0, 0, 0, 0.45);
-			box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -2px 6px rgba(0, 0, 0, 0.45);
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			font-size: 23px;
-			font-weight: 700;
-			color: #f2ece4;
-			text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-			user-select: none;
+			box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -2px 6px rgba(0, 0, 0, 0.45);
+			filter: hue-rotate(var(--hue, 0deg)) saturate(1.3);
 		}
 
 		.player.self .avatar {
 			border-color: var(--accent-bright);
-			box-shadow: 0 0 0 2px var(--accent), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+			box-shadow: 0 0 0 2px var(--accent), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 		}
 
 		.pname {
@@ -123,8 +121,66 @@
 			border-top: 1px solid var(--panel-border);
 		}
 
+		.launch {
+			margin-top: 22px;
+			padding-top: 20px;
+			border-top: 1px solid var(--panel-border);
+		}
+
+		.launch label {
+			display: block;
+			font-size: 11px;
+			color: var(--text-dim);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			margin-bottom: 6px;
+		}
+
+		.launch-row {
+			display: flex;
+			gap: 10px;
+		}
+
+		select {
+			flex: 1;
+			min-width: 0;
+			background: #0f0c0a;
+			border: 1px solid var(--panel-border);
+			color: var(--text);
+			padding: 10px 12px;
+			border-radius: 4px;
+			font-size: 13.5px;
+			outline: none;
+		}
+
+		select:focus { border-color: var(--accent); }
+
+		button#startBtn {
+			background: var(--accent);
+			color: #fff;
+			border: none;
+			padding: 0 22px;
+			border-radius: 4px;
+			font-size: 14px;
+			font-weight: 600;
+			cursor: pointer;
+			letter-spacing: 0.3px;
+		}
+
+		button#startBtn:hover:not(:disabled) { background: var(--accent-bright); }
+		button#startBtn:disabled { opacity: 0.5; cursor: default; }
+
+		.launch-status {
+			margin-top: 9px;
+			font-size: 12px;
+			min-height: 15px;
+			color: var(--text-dim);
+		}
+
+		.launch-status.err { color: var(--accent-bright); }
+
 		.foot {
-			margin-top: 16px;
+			margin-top: 20px;
 			display: flex;
 			justify-content: space-between;
 			align-items: center;
@@ -171,13 +227,21 @@
 			<div class="empty">Loading…</div>
 		</div>
 
+		<div class="launch">
+			<label for="mapSelect">Pick a level -- everyone here starts it together</label>
+			<div class="launch-row">
+				<select id="mapSelect" disabled><option>Loading maps…</option></select>
+				<button id="startBtn" disabled>Start</button>
+			</div>
+			<div class="launch-status" id="launchStatus"></div>
+		</div>
+
 		<hr class="sep">
 
 		<div class="foot">
 			<span>Signed in as <span id="whoami" style="color: var(--text);"></span></span>
 			<nav>
 				<a href="maps.html">Maps</a>
-				<a href="index.html">Enter the world</a>
 				<a href="#" id="logoutLink">log out</a>
 			</nav>
 		</div>
@@ -186,7 +250,7 @@
 	<script src="server-config.js"></script>
 	<script type="module">
 
-		import { requireSession, logout } from './src/auth_client.js';
+		import { requireSession, logout, fetchMapdb } from './src/auth_client.js';
 
 		const session = requireSession();
 		if ( session !== null ) {
@@ -200,21 +264,24 @@
 
 			} );
 
+			loadMapPicker();
 			startPresence( session );
 
 		}
 
 		/**
-		 * A stable colour per player, so the same person is always the same
-		 * shade. Hue comes off a cheap string hash; saturation/lightness stay
-		 * muted so a roomful of icons still reads against the dark card.
+		 * A stable hue per player, so the same person is always the same
+		 * shade of the same base face icon -- Quake's own "shirt colour"
+		 * trick for telling players apart, just done with CSS instead of a
+		 * palette-remapped skin. Cheap string hash; no avatar assets to
+		 * manage beyond the one icon.
 		 */
-		function avatarColor( name ) {
+		function avatarHue( name ) {
 
 			let hash = 0;
 			for ( let i = 0; i < name.length; i ++ ) hash = ( hash * 31 + name.charCodeAt( i ) ) | 0;
 
-			return 'hsl(' + ( Math.abs( hash ) % 360 ) + ', 42%, 38%)';
+			return Math.abs( hash ) % 360;
 
 		}
 
@@ -249,8 +316,7 @@
 
 				const avatar = document.createElement( 'div' );
 				avatar.className = 'avatar';
-				avatar.style.setProperty( '--avatar', avatarColor( player.username ) );
-				avatar.textContent = player.username.slice( 0, 1 ).toUpperCase();
+				avatar.style.setProperty( '--hue', avatarHue( player.username ) + 'deg' );
 
 				const name = document.createElement( 'div' );
 				name.className = 'pname';
@@ -273,6 +339,67 @@
 
 		}
 
+		function setLaunchStatus( text, isError ) {
+
+			const el = document.getElementById( 'launchStatus' );
+			el.textContent = text || '';
+			el.className = 'launch-status' + ( isError ? ' err' : '' );
+
+		}
+
+		/**
+		 * Populates the level picker. Vanilla episode maps are left out --
+		 * they're scripted single-player intro/outro levels, not built with
+		 * extra players in mind -- everything else (mod campaigns, standalone
+		 * customs, deathmatch arenas) is fair game. The server infers coop vs.
+		 * deathmatch from the same category when Start is pressed (see
+		 * hubModeForCategory in server/lobby_server.js) -- no mode picker here.
+		 */
+		async function loadMapPicker() {
+
+			const select = document.getElementById( 'mapSelect' );
+
+			let maps;
+			try {
+
+				maps = await fetchMapdb();
+
+			} catch ( e ) {
+
+				select.innerHTML = '<option>Could not load maps</option>';
+				return;
+
+			}
+
+			const entries = Object.entries( maps )
+				.filter( ( [ , entry ] ) => entry.category !== 'vanilla' )
+				.sort( ( a, b ) => a[ 1 ].title.localeCompare( b[ 1 ].title ) );
+
+			if ( entries.length === 0 ) {
+
+				select.innerHTML = '<option>No maps available</option>';
+				return;
+
+			}
+
+			select.innerHTML = entries
+				.map( ( [ id, entry ] ) => '<option value="' + id + '">' + entry.title + '</option>' )
+				.join( '' );
+			select.disabled = false;
+
+			updateStartEnabled();
+
+		}
+
+		function updateStartEnabled() {
+
+			const select = document.getElementById( 'mapSelect' );
+			const startBtn = document.getElementById( 'startBtn' );
+
+			startBtn.disabled = select.disabled || ! window.__tqPresenceLive;
+
+		}
+
 		/**
 		 * Holds one WebSocket open to the lobby for as long as this page is
 		 * open -- that open socket *is* the player's presence in the hub, so
@@ -286,14 +413,17 @@
 			const url = ( location.protocol === 'https:' ? 'wss://' : 'ws://' ) + lobby + '/ws';
 
 			let retry = null;
+			let socket = null;
 
 			function connect() {
 
-				const socket = new WebSocket( url );
+				socket = new WebSocket( url );
 
 				socket.addEventListener( 'open', () => {
 
 					setStatus( 'live', 'Live' );
+					window.__tqPresenceLive = true;
+					updateStartEnabled();
 					socket.send( JSON.stringify( { type: 'presence', token: session.token } ) );
 
 				} );
@@ -312,11 +442,37 @@
 
 					}
 
-					if ( msg.type === 'presence' ) renderRoster( msg.players || [], session.username );
+					if ( msg.type === 'presence' ) {
+
+						renderRoster( msg.players || [], session.username );
+
+					} else if ( msg.type === 'start' ) {
+
+						// The host (could be anyone here, including this
+						// client) pressed Start -- everyone on the page
+						// travels into the new room together.
+						setLaunchStatus( 'Starting…' );
+						// map rides along too, not just room: this is a fresh
+						// page load (not the same running client the old
+						// in-world kiosk broadcast reached), so main.js needs
+						// it to resolve the level's mod dirs from the map
+						// catalog before it can render anything.
+						window.location.href = 'index.html?room=' + encodeURIComponent( msg.roomId ) +
+							'&map=' + encodeURIComponent( msg.mapId );
+
+					} else if ( msg.type === 'start_failed' ) {
+
+						setLaunchStatus( msg.error || 'Could not start the match.', true );
+						document.getElementById( 'startBtn' ).disabled = false;
+
+					}
 
 				} );
 
 				const drop = () => {
+
+					window.__tqPresenceLive = false;
+					updateStartEnabled();
 
 					if ( retry !== null ) return;
 					setStatus( 'down', 'Reconnecting…' );
@@ -330,6 +486,17 @@
 			}
 
 			connect();
+
+			document.getElementById( 'startBtn' ).addEventListener( 'click', () => {
+
+				const mapId = document.getElementById( 'mapSelect' ).value;
+				if ( ! mapId || socket == null || socket.readyState !== WebSocket.OPEN ) return;
+
+				document.getElementById( 'startBtn' ).disabled = true;
+				setLaunchStatus( 'Starting…' );
+				socket.send( JSON.stringify( { type: 'start', mapId, token: session.token } ) );
+
+			} );
 
 		}
 

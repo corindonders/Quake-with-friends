@@ -7,7 +7,46 @@ so related ideas sit together regardless of when they were discussed. Pick
 up wherever sounds fun; when a new item becomes actively scheduled, give it
 its own build-order section the same way v1 had one.
 
-## v1: No main menu, worldspace hub UI — done (2026-09-14)
+## v2: 2D hub page — done (2026-09-15)
+
+**Goal:** replace the 3D worldspace hub/kiosk from v1 (below) with a plain
+2D web page (`hub.html`), in the same visual language as login/start. Login
+goes straight there now. Everyone currently on the page shows up as a face
+icon, live; picking a level and pressing Start pulls everyone present into
+that match together, sized to however many are there -- no mode picker,
+since the mode is inferred from the map's own catalog category
+(`hubModeForCategory` in `server/lobby_server.js`): `deathmatch` maps are
+`ffa`, everything else is `coop` (the only mode actually in scope for now;
+`teams`/`horde` etc. still work if a room is started with that mode some
+other way, just nothing on hub.html picks them yet).
+
+This fully replaces v1's approach, not an addition to it: `src/hub_kiosk.js`,
+`src/worldspace_ui.js`, `src/css3d_layer.js`, `server/css3d_addon_shim.js`,
+and `src/hub_config.js` are all deleted, along with the persistent `HUBWLD`
+room and every code path that referenced it (the hub is a web page now, not
+a running game room -- `server/lobby_server.js`'s `hubPresence` tracks who's
+on the page the same way `roomClients` tracks who's in a room, keyed by the
+open WebSocket rather than a game join). `src/travel_ui.js`'s manual
+"Travel" panel survives as the solo mid-match escape hatch; its old
+broadcast-receive machinery (`TRAVEL_TO`, `WS_SendHubStart`) is gone since
+group "start together" no longer happens from inside a running 3D client.
+
+Head icons are the real thing, not a placeholder: `icons/face1.png` is
+extracted straight from `gfx.wad`'s status-bar face lump (same asset the
+in-game HUD uses), hue-rotated per player via CSS so everyone's still
+visually distinct without needing a different image per person.
+
+Caught one real bug while wiring the new "Start" flow up end-to-end:
+hub.html's Start is a full page navigation to `index.html?room=...`, not a
+reconnect from an already-running client (which is how the old kiosk could
+get away with only ever sending a room id) -- so a custom map's mod
+dir never got loaded and the client failed to fetch the .bsp. Fixed by
+threading `map=` through the same redirect URL, which `main.js` already
+knew how to resolve into mod dirs; it just needed to stop *also* trying to
+locally single-player-load that same map now that a `room=` is also on the
+URL.
+
+## v1: No main menu, worldspace hub UI — superseded by v2
 
 **Goal:** players never see a traditional menu. They connect and spawn
 directly into a shared hub world. Everyone currently in the hub is
