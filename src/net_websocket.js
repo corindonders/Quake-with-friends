@@ -135,9 +135,13 @@ export function WS_SetTravelHandler( handler ) {
 // v1 build order item 7): a match room shutting down (naturally, on idle
 // timeout, ...) looks identical to a network blip from here, so this fires
 // for both, and it's up to the handler (travel_ui.js) to decide where that
-// leaves the player. Passed the host/URL that failed, so the handler can
-// tell "the hub itself is unreachable" apart from "some other room died"
-// and avoid looping back into the same failure.
+// leaves the player. Called with (host, error): `host` is the URL that
+// failed, so the handler can tell "the hub itself is unreachable" apart
+// from "some other room died" and avoid looping back into the same
+// failure; `error.authFailure` is true when the token itself was the
+// problem (expired/revoked/never valid) -- falling back to the hub with
+// that same bad token would just fail again, so the handler needs to send
+// the player to login.html instead.
 export function WS_SetConnectionLostHandler( handler ) {
 
 	ws_connectionLostHandler = handler;
@@ -442,7 +446,16 @@ export async function WS_Connect( host ) {
 
 				if ( parsed.error ) {
 
-					reject( new Error( parsed.error ) );
+					const err = new Error( parsed.error );
+					// The lobby sends this exact text when the session token
+					// itself is the problem (expired/revoked/never valid) --
+					// distinct from "room's gone" or "server unreachable",
+					// both of which the connection-lost handler below
+					// reasonably retries/falls back to the hub for. Retrying
+					// an invalid token just fails the same way forever, so
+					// this needs to send the player to login.html instead.
+					if ( parsed.error.indexOf( 'Not logged in' ) === 0 ) err.authFailure = true;
+					reject( err );
 					return;
 
 				}
@@ -548,7 +561,9 @@ export async function WS_Connect( host ) {
 
 		// A retry attempt itself failed (server/room still unreachable) --
 		// keep retrying with backoff instead of bailing out to the menu.
-		if ( isReconnecting && reconnectAttempt < MAX_RECONNECT_ATTEMPTS ) {
+		// Not for an auth failure though: retrying with the same bad token
+		// can only ever fail the same way.
+		if ( ! error.authFailure && isReconnecting && reconnectAttempt < MAX_RECONNECT_ATTEMPTS ) {
 
 			WS_ScheduleReconnect();
 			return null;
@@ -564,7 +579,7 @@ export async function WS_Connect( host ) {
 		}
 
 		Con_Printf( 'Connection failed. Check the console for details.\n' );
-		if ( ws_connectionLostHandler != null ) ws_connectionLostHandler( host );
+		if ( ws_connectionLostHandler != null ) ws_connectionLostHandler( host, error );
 		return null;
 
 	}

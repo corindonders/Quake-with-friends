@@ -7,7 +7,7 @@
 import { Cbuf_AddText } from './cmd.js';
 import { WS_CreateRoom, WS_SetTravelHandler, WS_SetConnectionLostHandler } from './net_websocket.js';
 import { Con_Printf } from './common.js';
-import { fetchMapdb } from './auth_client.js';
+import { fetchMapdb, logout } from './auth_client.js';
 import { COM_LoadMod } from './pak.js';
 import { HUB_ROOM_ID, HUB_MOD } from './hub_config.js';
 
@@ -239,7 +239,19 @@ export function TravelUI_Init( alreadyLoadedModDirs ) {
 
 	} );
 
-	WS_SetConnectionLostHandler( ( failedHost ) => {
+	WS_SetConnectionLostHandler( ( failedHost, error ) => {
+
+		// The stored token itself was the problem (expired/revoked/never
+		// valid) -- falling back to the hub would just present that same
+		// bad token again and fail the same way, so there's nothing to do
+		// but clear it and send the player back to log in properly.
+		if ( error && error.authFailure ) {
+
+			Con_Printf( 'Session expired -- returning to login.\n' );
+			logout();
+			return;
+
+		}
 
 		// Don't loop: if the hub itself is what just failed, there's nowhere
 		// further to fall back to -- let it sit disconnected rather than
