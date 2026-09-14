@@ -5,10 +5,11 @@
 // the hub.
 
 import { Cbuf_AddText } from './cmd.js';
-import { WS_CreateRoom, WS_SetTravelHandler } from './net_websocket.js';
+import { WS_CreateRoom, WS_SetTravelHandler, WS_SetConnectionLostHandler } from './net_websocket.js';
 import { Con_Printf } from './common.js';
 import { fetchMapdb } from './auth_client.js';
 import { COM_LoadMod } from './pak.js';
+import { HUB_ROOM_ID, HUB_MOD } from './hub_config.js';
 
 let panelEl = null;
 let buttonEl = null;
@@ -211,6 +212,19 @@ export async function TravelUI_TravelTo( mapId, roomId ) {
 
 }
 
+/**
+ * "Leaving a level returns you to the hub" (v1 build order item 7): the
+ * hub is a known, always-recreatable room (see HUB_ROOM_ID's auto-recreate
+ * path in server/lobby_server.js), so unlike a normal destination this
+ * never needs WS_CreateRoom -- passing HUB_ROOM_ID as the existing room id
+ * makes travelTo skip straight to disconnect/connect.
+ */
+export async function TravelUI_ReturnToHub() {
+
+	await travelTo( 'hub', { title: 'the hub', layers: [ HUB_MOD ] }, HUB_ROOM_ID );
+
+}
+
 export function TravelUI_Init( alreadyLoadedModDirs ) {
 
 	for ( const dir of ( alreadyLoadedModDirs || [] ) ) loadedModDirs.add( dir );
@@ -225,6 +239,21 @@ export function TravelUI_Init( alreadyLoadedModDirs ) {
 
 	} );
 
+	WS_SetConnectionLostHandler( ( failedHost ) => {
+
+		// Don't loop: if the hub itself is what just failed, there's nowhere
+		// further to fall back to -- let it sit disconnected rather than
+		// hammering a hub that's unreachable.
+		if ( typeof failedHost === 'string' && failedHost.includes( 'room=' + HUB_ROOM_ID ) ) return;
+
+		Con_Printf( 'Returning to the hub...\n' );
+		TravelUI_ReturnToHub().catch( ( e ) => {
+
+			Con_Printf( 'Could not return to the hub: ' + e.message + '\n' );
+
+		} );
+
+	} );
 
 	const style = document.createElement( 'style' );
 	style.textContent = `

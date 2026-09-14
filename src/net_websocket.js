@@ -121,10 +121,26 @@ Quake protocol itself has to know about.
 let ws_gameConn = null; // the live gameplay connection, if any
 let ws_travelHandler = null;
 let ws_hubStartFailedHandler = null;
+let ws_connectionLostHandler = null;
 
 export function WS_SetTravelHandler( handler ) {
 
 	ws_travelHandler = handler;
+
+}
+
+// Fires once the auto-reconnect loop below finally gives up on a connection
+// (retries exhausted, or an initial/retry connect attempt failed outright)
+// -- the game-ending "leaving a level returns you to the hub" case (see
+// v1 build order item 7): a match room shutting down (naturally, on idle
+// timeout, ...) looks identical to a network blip from here, so this fires
+// for both, and it's up to the handler (travel_ui.js) to decide where that
+// leaves the player. Passed the host/URL that failed, so the handler can
+// tell "the hub itself is unreachable" apart from "some other room died"
+// and avoid looping back into the same failure.
+export function WS_SetConnectionLostHandler( handler ) {
+
+	ws_connectionLostHandler = handler;
 
 }
 
@@ -548,6 +564,7 @@ export async function WS_Connect( host ) {
 		}
 
 		Con_Printf( 'Connection failed. Check the console for details.\n' );
+		if ( ws_connectionLostHandler != null ) ws_connectionLostHandler( host );
 		return null;
 
 	}
