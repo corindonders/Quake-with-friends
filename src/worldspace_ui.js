@@ -1,8 +1,10 @@
 // Generic worldspace UI framework for interactive elements in the 3D world.
 //
 // Manages a 3D trigger object (mesh) with proximity detection, look-at visibility,
-// and keyboard interaction (E key). The trigger can be associated with a DOM panel
-// that shows/hides when the player interacts with it.
+// and interaction -- either the E key (registerKeyHandler) or, for a more
+// in-game feel, shooting it (registerShootHandler). The trigger can be
+// associated with a DOM panel that shows/hides when the player interacts
+// with it.
 //
 // Usage:
 //   const trigger = new WorldspaceUITrigger({
@@ -22,6 +24,7 @@ import * as THREE from 'three';
 import { cl, cls, ca_connected } from './client.js';
 import { r_refdef } from './render.js';
 import { css3dScene, CSS3DObject } from './css3d_layer.js';
+import { camera } from './gl_rmain.js';
 
 export class WorldspaceUITrigger {
 
@@ -42,6 +45,7 @@ export class WorldspaceUITrigger {
 		this.worldName = options.worldName || '';
 		this.inRange = false;
 		this.keydownHandler = null;
+		this.shootHandler = null;
 
 	}
 
@@ -212,11 +216,57 @@ export class WorldspaceUITrigger {
 	}
 
 	/**
+	 * Register "shoot to interact": a classic Quake shootable-trigger feel
+	 * -- aim the crosshair at the trigger and fire (primary/left click)
+	 * instead of walking up and pressing E. Raycasts from screen center
+	 * (Quake's crosshair is always centered) against this.mesh, so it only
+	 * fires when the shot would actually land on the trigger, not merely
+	 * from being nearby. Only live while the game itself has the mouse
+	 * (pointer lock) -- with the panel open, clicks are its own buttons.
+	 * Uses the live `camera` export from gl_rmain.js rather than a
+	 * constructor/call-time argument, since it's still null when this runs
+	 * -- R_SetupGL only creates it once the first frame renders.
+	 */
+	registerShootHandler() {
+
+		if ( this.shootHandler ) return;
+
+		const raycaster = new THREE.Raycaster();
+
+		this.shootHandler = ( event ) => {
+
+			if ( event.button !== 0 ) return; // primary fire only
+			if ( document.pointerLockElement == null ) return; // UI has the mouse, not gameplay
+			if ( ! this.inRange || this.mesh === null || camera == null ) return;
+
+			raycaster.setFromCamera( { x: 0, y: 0 }, camera );
+			if ( raycaster.intersectObject( this.mesh ).length > 0 ) this.onInteract();
+
+		};
+
+		document.addEventListener( 'mousedown', this.shootHandler );
+
+	}
+
+	/**
+	 * Unregister the shoot-to-interact handler.
+	 */
+	unregisterShootHandler() {
+
+		if ( ! this.shootHandler ) return;
+
+		document.removeEventListener( 'mousedown', this.shootHandler );
+		this.shootHandler = null;
+
+	}
+
+	/**
 	 * Clean up all resources.
 	 */
 	cleanup() {
 
 		this.unregisterKeyHandler();
+		this.unregisterShootHandler();
 		this.remove();
 
 	}

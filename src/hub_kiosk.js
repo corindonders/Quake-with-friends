@@ -251,8 +251,10 @@ export function HubKiosk_Init() {
 
 	};
 
-	// Register the trigger's keyboard handler
+	// Register the trigger's keyboard handler, plus "shoot it to open it"
+	// -- aim at the kiosk and fire instead of walking up and pressing E.
 	trigger.registerKeyHandler();
+	trigger.registerShootHandler();
 
 	// Without this, a rejected HUB_START_MAP (no map picked, room limit
 	// reached, ...) left the panel stuck on "Starting..." forever -- the

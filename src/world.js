@@ -15,7 +15,7 @@ import {
 	sv, svs,
 	SOLID_NOT, SOLID_TRIGGER, SOLID_BBOX, SOLID_SLIDEBOX, SOLID_BSP,
 	MOVETYPE_PUSH,
-	FL_ITEM, FL_MONSTER
+	FL_ITEM, FL_MONSTER, FL_CLIENT
 } from './server.js';
 import {
 	CONTENTS_EMPTY, CONTENTS_SOLID, CONTENTS_WATER,
@@ -932,6 +932,19 @@ function SV_ClipToLinks( node, clip ) {
 
 			// don't clip against owner
 			if ( clip.passedict.v.owner !== 0 && PROG_TO_EDICT( clip.passedict.v.owner ) === touch ) {
+
+				l = next;
+				continue;
+
+			}
+
+			// Players pass through each other -- the hub is a social space
+			// (and matches share it with everyone who travelled in
+			// together), and vanilla's solid-vs-solid player collision
+			// means spawning on/near another player shoves or traps you.
+			// Both still collide normally with the world, monsters, and
+			// items; only client-vs-client blocking is skipped.
+			if ( ( ( clip.passedict.v.flags | 0 ) & FL_CLIENT ) && ( ( touch.v.flags | 0 ) & FL_CLIENT ) ) {
 
 				l = next;
 				continue;
