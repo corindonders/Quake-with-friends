@@ -6,34 +6,31 @@
 // solo escape hatch.
 //
 // The panel itself is plain DOM, same styling vocabulary as travel_ui.js.
-// What's "worldspace" here is the trigger: a prop mesh standing in the hub
-// map and a per-frame distance check against the player's eye position.
+// Uses the generic WorldspaceUITrigger framework for the interaction system.
 
-import * as THREE from 'three';
 import { Con_Printf } from './common.js';
 import { fetchMapdb } from './auth_client.js';
 import { WS_SendHubStart } from './net_websocket.js';
-import { cl, cls, ca_connected } from './client.js';
-import { r_refdef } from './render.js';
+import { cl } from './client.js';
 import { scene } from './gl_rmain.js';
+import { WorldspaceUITrigger, WorldspaceUIPanel } from './worldspace_ui.js';
 import {
 	HUB_MAP, HUB_MODES, HUB_MODE_TITLES, HUB_MAX_TEAMS,
 	HUB_KIOSK_RANGE, HUB_KIOSK_SPAWN_OFFSET,
 } from './hub_config.js';
 
+let trigger = null;
+let panel = null;
 let panelEl = null;
 let promptEl = null;
-let kioskMesh = null;
-let kioskWorldName = ''; // worldmodel the current mesh was placed for
-let inRange = false;
 let mapdbCache = null;
 
 /**
  * Pull the first info_player_start out of a compiled map's entity lump.
  * The hub map isn't purpose-built (no kiosk entity to read a spot from --
- * see src/hub_config.js), so this is what anchors the prop.
+ * see src/hub_config.js), so this is what anchors the kiosk trigger.
  */
-function Kiosk_FindPlayerStart( entities ) {
+function FindPlayerStart( entities ) {
 
 	if ( typeof entities !== 'string' ) return null;
 
@@ -57,53 +54,27 @@ function Kiosk_FindPlayerStart( entities ) {
 
 }
 
-function Kiosk_Place() {
+/**
+ * Calculate kiosk position based on the map's spawn point.
+ */
+function CalculateKioskPosition() {
 
 	const world = cl.worldmodel;
-	if ( world == null || scene == null ) return;
-	if ( kioskWorldName === world.name ) return;
+	if ( world == null ) return null;
 
-	Kiosk_Remove();
-	kioskWorldName = world.name;
+	// Only the hub gets a kiosk
+	if ( world.name !== 'maps/' + HUB_MAP + '.bsp' ) return null;
 
-	// Only the hub gets a kiosk -- travelling into a match shouldn't carry it
-	// along.
-	if ( world.name !== 'maps/' + HUB_MAP + '.bsp' ) return;
+	const start = FindPlayerStart( world.entities );
+	if ( start === null ) return null;
 
-	const start = Kiosk_FindPlayerStart( world.entities );
-	if ( start === null ) {
-
-		Con_Printf( 'Hub kiosk: no info_player_start in ' + world.name + '\n' );
-		return;
-
-	}
-
-	// Push it out along the way the spawn faces: open space by construction,
-	// whichever map is standing in as the hub.
+	// Push it out along the way the spawn faces
 	const yaw = start.angle * Math.PI / 180;
 	const x = start.origin[ 0 ] + Math.cos( yaw ) * HUB_KIOSK_SPAWN_OFFSET;
 	const y = start.origin[ 1 ] + Math.sin( yaw ) * HUB_KIOSK_SPAWN_OFFSET;
 	const z = start.origin[ 2 ];
 
-	// Scene geometry is in raw Quake units and materials are BackSide
-	// (front-face culling, see R_SetupGL) -- DoubleSide keeps the box solid
-	// from every angle regardless.
-	const geometry = new THREE.BoxGeometry( 32, 32, 64 );
-	const material = new THREE.MeshBasicMaterial( { color: 0xb23b2e, side: THREE.DoubleSide } );
-	kioskMesh = new THREE.Mesh( geometry, material );
-	kioskMesh.position.set( x, y, z );
-	scene.add( kioskMesh );
-
-}
-
-function Kiosk_Remove() {
-
-	if ( kioskMesh === null ) return;
-
-	if ( scene != null ) scene.remove( kioskMesh );
-	kioskMesh.geometry.dispose();
-	kioskMesh.material.dispose();
-	kioskMesh = null;
+	return [ x, y, z ];
 
 }
 
@@ -118,6 +89,7 @@ function setStatus( text, isError ) {
 
 function syncTeamRow() {
 
+	if ( ! panelEl ) return;
 	const mode = panelEl.querySelector( '.tq-kiosk-mode' ).value;
 	panelEl.querySelector( '.tq-kiosk-team-row' ).hidden = ( mode !== 'teams' && mode !== 'teams_ai' );
 
@@ -170,84 +142,26 @@ function startMatch() {
 
 }
 
-function showPanel() {
 
-	panelEl.hidden = false;
-	setStatus( '' );
-
-	// The panel is mouse-driven; the game is holding the pointer.
-	if ( document.exitPointerLock ) document.exitPointerLock();
-
-	renderPanel().then( syncTeamRow ).catch( ( e ) => setStatus( 'Failed: ' + e.message, true ) );
-
-}
-
-function hidePanel() {
-
-	panelEl.hidden = true;
-
-}
-
-function handleKeyDown( event ) {
-
-	if ( event.key === 'Escape' && ! panelEl.hidden ) {
-
-		hidePanel();
-		return;
-
-	}
-
-	if ( event.key !== 'e' && event.key !== 'E' ) return;
-	if ( event.target !== document.body && event.target !== document.documentElement ) return;
-
-	if ( ! panelEl.hidden ) hidePanel();
-	else if ( inRange ) showPanel();
-
-}
 
 /*
 =============
 HubKiosk_Frame
 
-Called once per rendered frame from main.js. Keeps the prop in sync with
-whatever map is loaded and drives the proximity prompt.
+Called once per rendered frame from main.js. Updates the trigger state.
 =============
 */
 export function HubKiosk_Frame() {
 
-	if ( panelEl === null ) return;
+	if ( trigger === null ) return;
 
-	if ( cls.state !== ca_connected ) {
-
-		Kiosk_Remove();
-		kioskWorldName = '';
-		inRange = false;
-		promptEl.hidden = true;
-		return;
-
-	}
-
-	Kiosk_Place();
-
-	if ( kioskMesh === null ) {
-
-		inRange = false;
-		promptEl.hidden = true;
-		return;
-
-	}
-
-	const dx = r_refdef.vieworg[ 0 ] - kioskMesh.position.x;
-	const dy = r_refdef.vieworg[ 1 ] - kioskMesh.position.y;
-	const dz = r_refdef.vieworg[ 2 ] - kioskMesh.position.z;
-	inRange = ( dx * dx + dy * dy + dz * dz ) <= HUB_KIOSK_RANGE * HUB_KIOSK_RANGE;
-
-	promptEl.hidden = ! inRange || ! panelEl.hidden;
+	trigger.frame();
 
 }
 
 export function HubKiosk_Init() {
 
+	// Style the UI elements
 	const style = document.createElement( 'style' );
 	style.textContent = `
 		#tq-kiosk-prompt {
@@ -278,12 +192,14 @@ export function HubKiosk_Init() {
 	`;
 	document.head.appendChild( style );
 
+	// Create prompt element (shown when in range)
 	promptEl = document.createElement( 'div' );
 	promptEl.id = 'tq-kiosk-prompt';
 	promptEl.textContent = 'Press E to use';
 	promptEl.hidden = true;
 	document.body.appendChild( promptEl );
 
+	// Create panel element (shown when interacting)
 	panelEl = document.createElement( 'div' );
 	panelEl.id = 'tq-kiosk-panel';
 	panelEl.hidden = true;
@@ -303,9 +219,74 @@ export function HubKiosk_Init() {
 		'<div class="tq-kiosk-status"></div>';
 	document.body.appendChild( panelEl );
 
+	// Wire up panel events
 	panelEl.querySelector( '.tq-kiosk-mode' ).addEventListener( 'change', syncTeamRow );
 	panelEl.querySelector( '.tq-kiosk-start' ).addEventListener( 'click', startMatch );
 
-	document.addEventListener( 'keydown', handleKeyDown );
+	// Create the worldspace trigger
+	trigger = new WorldspaceUITrigger( {
+		world: cl.worldmodel,
+		scene: scene,
+		position: [ 0, 0, 0 ], // will be updated in onProximityEnter
+		range: HUB_KIOSK_RANGE,
+		color: 0xb23b2e,
+		size: { width: 32, height: 32, depth: 64 },
+		onProximityEnter: () => {
+
+			promptEl.hidden = false;
+
+		},
+		onProximityExit: () => {
+
+			promptEl.hidden = true;
+
+		},
+		onInteract: () => {
+
+			panel.show();
+
+		},
+	} );
+
+	// Recalculate position when entering proximity
+	const originalProximityEnter = trigger.onProximityEnter;
+	trigger.onProximityEnter = () => {
+
+		// Update trigger position based on current map spawn point
+		const pos = CalculateKioskPosition();
+		if ( pos ) {
+
+			trigger.position = pos;
+			if ( trigger.mesh ) {
+
+				trigger.mesh.position.set( ...pos );
+
+			}
+
+		}
+
+		originalProximityEnter();
+
+	};
+
+	// Create the panel helper
+	panel = new WorldspaceUIPanel( {
+		element: panelEl,
+		showPrompt: () => {
+
+			// Request pointer lock when showing panel
+			if ( document.exitPointerLock ) document.exitPointerLock();
+			renderPanel().then( syncTeamRow ).catch( ( e ) => setStatus( 'Failed: ' + e.message, true ) );
+
+		},
+		hidePrompt: () => {
+
+			// No special action needed on hide
+
+		},
+	} );
+
+	// Register the trigger's keyboard handler
+	trigger.registerKeyHandler();
 
 }
