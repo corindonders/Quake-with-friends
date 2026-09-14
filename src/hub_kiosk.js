@@ -11,7 +11,7 @@
 // walking around it changes what you see, same as any other prop.
 
 import { fetchMapdb } from './auth_client.js';
-import { WS_SendHubStart } from './net_websocket.js';
+import { WS_SendHubStart, WS_SetHubStartFailedHandler } from './net_websocket.js';
 import { cl } from './client.js';
 import { scene } from './gl_rmain.js';
 import { WorldspaceUITrigger, WorldspaceUIPanel3D } from './worldspace_ui.js';
@@ -334,5 +334,14 @@ export function HubKiosk_Init() {
 
 	// Register the trigger's keyboard handler
 	trigger.registerKeyHandler();
+
+	// Without this, a rejected HUB_START_MAP (no map picked, room limit
+	// reached, ...) left the panel stuck on "Starting..." forever -- the
+	// server's HUB_START_FAILED reply only ever reached the console.
+	WS_SetHubStartFailedHandler( ( error ) => {
+
+		setStatus( 'Failed: ' + error, true );
+
+	} );
 
 }

@@ -22,6 +22,17 @@ let mapdbCache = null;
 // travelTo below).
 const loadedModDirs = new Set();
 
+// Bumped on every travelTo() call, and checked after each await inside it.
+// The hub's "host starts for all" broadcast means this client can receive a
+// second TRAVEL_TO (a different player starting a different match, or a
+// stray double-click of its own) while an earlier one is still mid-flight
+// (loading mods, waiting on WS_CreateRoom, ...). Without this, both calls
+// would eventually reach the disconnect/connect Cbuf commands and interleave
+// them, leaving the player briefly connected to the wrong room before a
+// second reconnect corrects it. A call that finds itself stale here just
+// bails out silently -- the newer call is the one whose commands should win.
+let travelGeneration = 0;
+
 /**
  * Deterministic 6-char room ID for a given map id, so every client that
  * picks the same destination requests the same room.
@@ -74,6 +85,8 @@ function escapeHTML( s ) {
  */
 async function travelTo( mapId, entry, existingRoomId ) {
 
+	const myGeneration = ++travelGeneration;
+
 	setStatus( 'Traveling to ' + entry.title + '…' );
 
 	try {
@@ -86,6 +99,7 @@ async function travelTo( mapId, entry, existingRoomId ) {
 		// though the room server itself loaded them fine independently.
 		for ( const dir of ( entry.layers || [] ) ) {
 
+			if ( myGeneration !== travelGeneration ) return; // superseded mid-load
 			if ( loadedModDirs.has( dir ) ) continue;
 			setStatus( 'Loading ' + dir + '…' );
 			await COM_LoadMod( dir );
@@ -111,6 +125,8 @@ async function travelTo( mapId, entry, existingRoomId ) {
 				specificId: roomId,
 			} );
 
+			if ( myGeneration !== travelGeneration ) return; // superseded mid-create
+
 		}
 
 		Cbuf_AddText( 'disconnect\n' );
@@ -121,7 +137,7 @@ async function travelTo( mapId, entry, existingRoomId ) {
 	} catch ( e ) {
 
 		Con_Printf( 'Travel failed: ' + e.message + '\n' );
-		setStatus( 'Failed: ' + e.message, true );
+		if ( myGeneration === travelGeneration ) setStatus( 'Failed: ' + e.message, true );
 
 	}
 

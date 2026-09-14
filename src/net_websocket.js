@@ -120,10 +120,21 @@ Quake protocol itself has to know about.
 
 let ws_gameConn = null; // the live gameplay connection, if any
 let ws_travelHandler = null;
+let ws_hubStartFailedHandler = null;
 
 export function WS_SetTravelHandler( handler ) {
 
 	ws_travelHandler = handler;
+
+}
+
+// Lets the kiosk panel (src/hub_kiosk.js) show *why* a HUB_START_MAP it
+// sent got rejected (no map picked, room limit reached, ...) instead of
+// leaving the panel stuck on "Starting..." with no explanation -- see
+// WS_SendHubStart below and the HUB_START_FAILED handling further down.
+export function WS_SetHubStartFailedHandler( handler ) {
+
+	ws_hubStartFailedHandler = handler;
 
 }
 
@@ -471,6 +482,7 @@ export async function WS_Connect( host ) {
 				} else if ( control.type === 'HUB_START_FAILED' ) {
 
 					Con_Printf( 'Could not start the match: ' + control.error + '\n' );
+					if ( ws_hubStartFailedHandler != null ) ws_hubStartFailedHandler( control.error );
 
 				}
 				return;
