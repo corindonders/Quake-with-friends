@@ -1,12 +1,13 @@
 # Development plan
 
 Working plan for active development plus the unordered feature backlog,
-combined into one file, organized by category. **v1 (below) is the only
-actively scheduled work** — everything else is future/backlog, ordered
-to come after v1 ships, and grouped by area so related ideas sit together
-regardless of when they were discussed.
+combined into one file, organized by category. **v1 (below) shipped** —
+everything else is future/backlog, unordered unless noted, grouped by area
+so related ideas sit together regardless of when they were discussed. Pick
+up wherever sounds fun; when a new item becomes actively scheduled, give it
+its own build-order section the same way v1 had one.
 
-## v1: No main menu, worldspace hub UI
+## v1: No main menu, worldspace hub UI — done (2026-09-14)
 
 **Goal:** players never see a traditional menu. They connect and spawn
 directly into a shared hub world. Everyone currently in the hub is
@@ -15,23 +16,44 @@ worldspace kiosk, everyone in the hub travels into that room together.
 Special gamemodes (deathmatch, horde, etc.) are also started from the hub,
 not from a menu screen.
 
-### Current state (as of 2026-09-13)
+All 7 build-order items landed:
 
-- Party/travel-together plumbing already works: everyone connected to the
-  shared `HUBWLD` room gets a broadcast `TRAVEL_TO` when someone starts a
-  map, via `RoomClients_Broadcast` in `server/lobby_server.js` and
-  deterministic room ids in `src/hub_config.js`.
-- A first-pass hub trigger exists in `src/hub_kiosk.js` — a proximity-based
-  box mesh that pops a **DOM** panel (not worldspace) to pick map/mode and
-  calls `WS_SendHubStart`.
-- Two separate menu systems currently run: the legacy canvas-drawn WinQuake
-  menu (`src/menu.js`, driven from `src/host.js`), and newer DOM overlay
-  panels (`src/travel_ui.js`, `src/hub_kiosk.js`).
-- `horde` mode is fully implemented (`src/horde.js`) but not wired into
-  `HUB_MODES` in `src/hub_config.js` — the hub only knows about
-  ffa/teams/teams_ai/coop today.
-- The hub currently reuses Copper's `start` map as a stand-in; there's no
-  purpose-built hub level.
+1. Legacy canvas menu no longer auto-invokes anywhere on the connect/boot
+   path (`src/menu.js` still exists for options/keybinds, just never blocks
+   boot).
+2. Generic worldspace UI framework: `WorldspaceUITrigger` +
+   `WorldspaceUIPanel3D` (`src/worldspace_ui.js`), a reusable
+   proximity/interact primitive any future hub prop can reuse.
+3. The kiosk panel is a real object in the 3D scene (CSS3DRenderer layer,
+   `src/css3d_layer.js`), not a flat DOM overlay — oriented via
+   `Object3D.lookAt()` so it reads correctly from wherever a player is
+   standing.
+4. `horde` is in `HUB_MODES`, threaded through to the room process
+   (`server/game_server.js`). Along the way, fixed a real bug where horde's
+   wave timer ran off a wall-clock variable (`realtime` from `src/host.js`)
+   that's never advanced by the dedicated server's own frame loop — it now
+   uses `sv.time`, which both loops keep in sync.
+5. Hardened the "host starts for all" broadcast: a reentrancy guard on
+   `travelTo()` (a second TRAVEL_TO arriving mid-flight no longer races the
+   first into interleaved connect commands) and a `HUB_START_FAILED` reply
+   now actually reaches the kiosk panel instead of only the console.
+6. The hub runs on a deliberately chosen existing map (`q30__start`, the Q30
+   Deathmatch Jam pack's own map-select rotunda) instead of the vanilla
+   placeholder, with the kiosk trigger/panel at hand-picked fixed
+   coordinates (no more regex-parsing the loaded map's entity lump every
+   time). A real purpose-built "skybox + floor + kiosk" .bsp is still
+   blocked on no qbsp/vis/light compiler toolchain in-repo. Picking a loose
+   (non-pak) map for the first time also surfaced a portability bug — the
+   dedicated server's loose-file base path was hardcoded to the production
+   deploy path (`/opt/three-quake/`), silently breaking any loose map
+   outside that exact install; now derived relatively.
+7. Added the missing "leaving a level returns you to the hub" behavior — a
+   match room dying (or becoming unreachable) now falls back to rejoining
+   the hub instead of leaving the reconnect loop to give up silently.
+   Verified end-to-end with two real logged-in clients: one started a coop
+   match via `WS_SendHubStart` and the server confirmed both travelled
+   together into the same room; then a forced connection failure confirmed
+   the failed client automatically rejoined `HUBWLD`.
 
 ### Decisions locked in
 
@@ -43,41 +65,9 @@ not from a menu screen.
   per-mode settings (frag limits, wave counts, etc.) or loadout selection
   yet — that's future work below.
 
-### Build order
-
-1. **Kill the legacy menu boot path.** Skip `M_Menu_Main_f`/canvas menu on
-   connect entirely; go straight from connect → spawn in hub. Keep
-   `menu.js` around only if still needed for options/keybinds, reachable
-   from inside the hub, never blocking boot.
-2. **Generic worldspace UI framework.** A reusable primitive: a panel
-   rendered *in* the 3D world (billboard/quad with canvas-texture, or
-   CSS3DRenderer-backed) attached to a hub entity, with proximity + look-at
-   + interact detection. Replaces the ad-hoc per-frame distance check in
-   `hub_kiosk.js` so future hub interactions don't each reinvent this.
-3. **Rebuild the kiosk on top of that framework** — map + gamemode
-   selection panel that's actually part of the 3D scene, not a flat DOM
-   overlay.
-4. **Add horde to `HUB_MODES`.** Thread it through
-   `Hub_NormalizeModeConfig` → `RoomManager_CreateRoom` → the room process
-   the same way ffa/teams/coop already work.
-5. **Confirm "host starts for all" edge cases** — player joins hub
-   mid-interaction, someone starts a room while another player has the
-   kiosk panel open, etc. The broadcast mechanism mostly exists; this is a
-   verification/hardening pass, not new plumbing.
-6. **Real hub level.** Either a small purpose-built hub map (blocked on: no
-   qbsp/vis/light compiler toolchain in-repo, so a real custom .bsp can't
-   be authored without setting that up first) or a deliberately chosen and
-   cleaned-up existing map used permanently as the hub, with kiosks placed
-   at real fixed points instead of the current regex-found spawn position.
-7. **Polish pass.** No menu-flash on connect, leaving a level returns you
-   to the hub, multiplayer smoke test with 2+ clients starting coop /
-   deathmatch / horde together from the hub.
-
 ---
 
-## Everything below is post-v1
-
-Nothing in this section is scheduled ahead of the v1 build order above.
+## Everything below is post-v1, unscheduled
 Pick items up once v1 ships, in whatever order sounds fun.
 
 ## Engine & rendering
