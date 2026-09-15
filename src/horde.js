@@ -20,7 +20,6 @@ import { EDICT_TO_PROG, pr_global_struct, pr_functions } from './progs.js';
 import { PR_ExecuteProgram } from './pr_exec.js';
 import { ED_Alloc, ED_FindField, ED_FindFunction, ED_ParseEpair } from './pr_edict.js';
 import { SV_BroadcastPrintf, SV_ClientPrintf } from './host.js';
-import { realtime } from './host.js';
 import { cvar_t, Cvar_RegisterVariable } from './cvar.js';
 
 // All admin-tunable: a room host sets these from the in-game console (e.g.
@@ -55,7 +54,7 @@ const MONSTER_POOL = [
 let active = false;
 let wave = 0;
 let aliveEnts = [];
-let waveTimer = 0; // realtime to spawn the next wave at, 0 = not scheduled
+let waveTimer = 0; // sv.time to spawn the next wave at, 0 = not scheduled
 
 /*
 =================
@@ -170,7 +169,7 @@ function _spawnWave() {
 
 		// Nobody to spawn near -- try again shortly rather than stalling forever.
 		wave --;
-		waveTimer = realtime + sv_horde_wavedelay.value;
+		waveTimer = sv.time + sv_horde_wavedelay.value;
 		return;
 
 	}
@@ -185,7 +184,7 @@ export function Horde_Start() {
 	active = true;
 	wave = 0;
 	aliveEnts = [];
-	waveTimer = realtime + sv_horde_startdelay.value;
+	waveTimer = sv.time + sv_horde_startdelay.value;
 	SV_BroadcastPrintf( 'Horde mode started -- survive the waves!\n' );
 
 }
@@ -210,7 +209,11 @@ export function Horde_Active() {
 =================
 Horde_Think
 
-Call once per server frame (see Host_ServerFrame in host.js).
+Call once per server frame -- from Host_Frame (src/host.js) when hosted
+locally, and from Host_ServerFrame (server/game_server.js) in a dedicated
+room process. Timing runs off sv.time (updated by SV_Physics, see
+src/sv_phys.js) rather than either module's own wall-clock realtime, since
+only sv.time is guaranteed to advance in both places.
 =================
 */
 export function Horde_Think() {
@@ -223,10 +226,10 @@ export function Horde_Think() {
 
 	if ( waveTimer === 0 ) {
 
-		waveTimer = realtime + sv_horde_wavedelay.value;
+		waveTimer = sv.time + sv_horde_wavedelay.value;
 		SV_BroadcastPrintf( 'Wave ' + wave + ' cleared! Next wave in ' + sv_horde_wavedelay.value + 's...\n' );
 
-	} else if ( realtime >= waveTimer ) {
+	} else if ( sv.time >= waveTimer ) {
 
 		waveTimer = 0;
 		_spawnWave();

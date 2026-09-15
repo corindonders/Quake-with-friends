@@ -30,6 +30,19 @@ async function main() {
 		const session = requireSession();
 		if ( session === null ) return;
 
+		// This page is only ever loaded with a specific destination in mind
+		// (?map= for a local/singleplayer load, ?room= to join a running
+		// match) -- picking where to go is hub.html's job. Bounce anyone who
+		// lands here with neither (a bare index.html hit, an old bookmark)
+		// there instead of spawning them into nothing.
+		const bootParams = new URLSearchParams( window.location.search );
+		if ( ! bootParams.get( 'map' ) && ! bootParams.get( 'room' ) ) {
+
+			window.location.href = 'hub.html';
+			return;
+
+		}
+
 		WS_SetAuthToken( session.token );
 
 		Sys_Init();
@@ -94,12 +107,6 @@ async function main() {
 		const mapName = urlParams.get( 'map' );
 		const explicitRoomId = urlParams.get( 'room' );
 
-		// No explicit map or room requested: we're about to auto-join the hub
-		// below, which is Copper's own "start" map -- the client needs that
-		// mod's assets loaded too, same as the room does server-side.
-		const joiningHub = ! mapName && ! explicitRoomId &&
-			!! ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby );
-
 		// Layer mod/map directories onto the search path, e.g. ?mod=mods/copper&map=frogsbog
 		// Directories are layered in order given, each taking priority over
 		// the last (and over the base game) for paks, progs.dat, and
@@ -108,12 +115,6 @@ async function main() {
 			.split( ',' )
 			.map( ( s ) => s.trim() )
 			.filter( ( s ) => s.length > 0 );
-
-		if ( modDirs.length === 0 && joiningHub ) {
-
-			modDirs = [ 'mods/copper' ];
-
-		}
 
 		// If no mod was given explicitly but the requested map is listed in
 		// the (admin-editable) map catalog, use the layers it declares (e.g.
@@ -140,7 +141,7 @@ async function main() {
 
 		}
 
-		TravelUI_Init();
+		TravelUI_Init( modDirs );
 
 		// Preload custom menu images
 		try {
@@ -154,9 +155,14 @@ async function main() {
 
 		}
 
-		// Auto-load a map, e.g. ?map=frogsbog (fetched on demand via COM_EnsureFile,
-		// checking mod dirs above before the base game's maps/ folder)
-		if ( mapName ) {
+		// Auto-load a map locally, e.g. ?map=frogsbog (fetched on demand via
+		// COM_EnsureFile, checking mod dirs above before the base game's
+		// maps/ folder) -- but only when there's no ?room= alongside it.
+		// hub.html's "Start" links to ?map=<id>&room=<id> together so this
+		// same page load can resolve modDirs from the map's catalog entry
+		// (above) without a fresh navigation; the actual level comes from
+		// the room we're about to join, not a local single-player spawn.
+		if ( mapName && ! explicitRoomId ) {
 
 			Cbuf_AddText( 'map ' + mapName + '\n' );
 
@@ -166,20 +172,11 @@ async function main() {
 		let roomId = explicitRoomId;
 		let serverUrl = urlParams.get( 'server' );
 
-		// No explicit map or room requested: land in the persistent hub room
-		// on the configured lobby server, same as everyone else who just
-		// logged in -- that's the "meet up before picking a world" flow.
-		if ( joiningHub ) {
-
-			roomId = 'HUBWLD';
-
-		}
-
 		// Fill in the configured lobby whenever the URL didn't specify one --
-		// this covers both the hub above and an explicit ?room= share link
-		// (e.g. from menu.js's "share this room" flow), which only ever
-		// encodes the room ID, not a server. Match the page's own protocol --
-		// ws(s) is derived from this.
+		// covers an explicit ?room= link (from hub.html's "Start", or
+		// menu.js's "share this room" flow), which only ever encodes the
+		// room ID, not a server. Match the page's own protocol -- ws(s) is
+		// derived from this.
 		if ( roomId && ! serverUrl && window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) {
 
 			serverUrl = ( window.location.protocol === 'https:' ? 'https://' : 'http://' ) + window.THREE_QUAKE_SERVER.lobby;

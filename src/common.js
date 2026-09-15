@@ -516,8 +516,19 @@ export function MSG_ReadString() {
 
 	while ( chars.length < 2047 ) {
 
-		const c = MSG_ReadChar();
-		if ( c === - 1 || c === 0 )
+		// Read unsigned: map text uses the 0x80-0xFF half of Quake's charset for
+		// the gold font, so a signed read would both mangle those codes and treat
+		// a legitimate 0xFF as the -1 end-of-message sentinel, truncating the
+		// string mid-word.
+		if ( msg_readcount + 1 > net_message.cursize ) {
+
+			msg_badread = true;
+			break;
+
+		}
+
+		const c = net_message.data[ msg_readcount ++ ];
+		if ( c === 0 )
 			break;
 		chars.push( String.fromCharCode( c ) );
 

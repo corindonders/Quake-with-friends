@@ -25,6 +25,8 @@ interface RoomProcess {
 	lastOutputTime: number;  // Last stdout/stderr line seen from room process
 	lastWatchdogTime: number; // Last watchdog tick seen from room stderr
 	persistent: boolean; // exempt from idle cleanup (e.g. the hub)
+	mode: string; // 'ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde' -- see server/lobby_server.js's hubModeForCategory
+	teamCount: number; // teams to split players across, 0 for non-team modes
 }
 
 function isRoomResponsive( room: RoomProcess, now: number ): boolean {
@@ -98,6 +100,8 @@ export async function RoomManager_CreateRoom( config: {
 	hostName: string;
 	specificId?: string;
 	persistent?: boolean;
+	mode?: string;
+	teamCount?: number;
 } ): Promise<{ id: string; port: number } | null> {
 	// Reclaim any frozen rooms before enforcing limits/port availability.
 	RoomManager_CleanupUnhealthyRooms();
@@ -189,6 +193,13 @@ export async function RoomManager_CreateRoom( config: {
 		];
 		if ( safeMod.length > 0 ) args.push( '-mod', safeMod );
 
+		// Game mode picked by the hub (server/lobby_server.js). Unset means
+		// the room keeps game_server.js's own default (free-for-all).
+		const safeMode = ( config.mode || '' ).replace( /[^a-z_]/g, '' );
+		const teamCount = Number( config.teamCount ) > 0 ? Math.floor( Number( config.teamCount ) ) : 0;
+		if ( safeMode.length > 0 ) args.push( '-mode', safeMode );
+		if ( teamCount > 0 ) args.push( '-teamcount', String( teamCount ) );
+
 		const command = new Deno.Command( denoPath, {
 			args,
 			cwd: serverDir, // pin cwd regardless of how the lobby process itself was launched
@@ -214,6 +225,8 @@ export async function RoomManager_CreateRoom( config: {
 			lastOutputTime: now,
 			lastWatchdogTime: now,
 			persistent: config.persistent === true,
+			mode: safeMode,
+			teamCount,
 		};
 		roomProcesses.set( id, roomInfo );
 
@@ -475,6 +488,8 @@ export function RoomManager_CleanupUnhealthyRooms(): number {
 				hostName: room.hostName,
 				specificId: room.id,
 				persistent: true,
+				mode: room.mode,
+				teamCount: room.teamCount,
 			} : null;
 
 			RoomManager_TerminateRoom( id );

@@ -1,0 +1,50 @@
+==============================================================================
+Title       : Binding Tower
+Filename    : bindingtower
+Date        : May 2019
+Author      : Albert van Zyl
+Discord     : Albert#9435
+
+Description : Ominous silence surrounds a forgotten tower in a forest glade. Death Squads quietly patrol its surroundings, ready to unleash hell upon any visitor. You have just arrived in yet another distant world ravaged by Quake.
+
+==============================================================================
+Huge thanks for all the help from
+
+* Bal
+* dumptruck_ds
+* ericw
+* fairweather
+* FifthElephant
+* onetruepurple
+* simonoc
+* queenjazz
+* u]|[KK]|[o
+* Windawz
+* ZungryWare
+* and all the others I’m forgetting
+
+==============================================================================
+Map Information:
+
+Game          : Quake (id1)
+Single Player : Yes
+Co-op         : No
+Deathmatch    : No
+Difficulty    : Yes
+Editor        : Trenchbroom 2.1.0
+Textures      : quake101.wad
+Tools         :	ericw-tools 0.18.1
+Engines tested:	Quakespasm 0.93.1
+
+==============================================================================
+Skybox
+
+The skybox in this map is adgreensky created by Gavin Edgington (FifthElephant).
+Place all six tga files into your id1/gfx/env folder.
+
+==============================================================================
+Distribution / Copyright / Permissions 
+
+Not for commercial use. You may distribute this file, provided you include this text file. Do not make any modifications without permission from the author.
+
+==============================================================================

@@ -1,0 +1,306 @@
+# Development plan
+
+Working plan for active development plus the unordered feature backlog,
+combined into one file, organized by category. **v1 (below) shipped** —
+everything else is future/backlog, unordered unless noted, grouped by area
+so related ideas sit together regardless of when they were discussed. Pick
+up wherever sounds fun; when a new item becomes actively scheduled, give it
+its own build-order section the same way v1 had one.
+
+## v2: 2D hub page — done (2026-09-15)
+
+**Goal:** replace the 3D worldspace hub/kiosk from v1 (below) with a plain
+2D web page (`hub.html`), in the same visual language as login/start. Login
+goes straight there now. Everyone currently on the page shows up as a face
+icon, live; picking a level and pressing Start pulls everyone present into
+that match together, sized to however many are there -- no mode picker,
+since the mode is inferred from the map's own catalog category
+(`hubModeForCategory` in `server/lobby_server.js`): `deathmatch` maps are
+`ffa`, everything else is `coop` (the only mode actually in scope for now;
+`teams`/`horde` etc. still work if a room is started with that mode some
+other way, just nothing on hub.html picks them yet).
+
+This fully replaces v1's approach, not an addition to it: `src/hub_kiosk.js`,
+`src/worldspace_ui.js`, `src/css3d_layer.js`, `server/css3d_addon_shim.js`,
+and `src/hub_config.js` are all deleted, along with the persistent `HUBWLD`
+room and every code path that referenced it (the hub is a web page now, not
+a running game room -- `server/lobby_server.js`'s `hubPresence` tracks who's
+on the page the same way `roomClients` tracks who's in a room, keyed by the
+open WebSocket rather than a game join). `src/travel_ui.js`'s manual
+"Travel" panel survives as the solo mid-match escape hatch; its old
+broadcast-receive machinery (`TRAVEL_TO`, `WS_SendHubStart`) is gone since
+group "start together" no longer happens from inside a running 3D client.
+
+Head icons are the real thing, not a placeholder: `icons/face1.png` is
+extracted straight from `gfx.wad`'s status-bar face lump (same asset the
+in-game HUD uses), hue-rotated per player via CSS so everyone's still
+visually distinct without needing a different image per person.
+
+Caught one real bug while wiring the new "Start" flow up end-to-end:
+hub.html's Start is a full page navigation to `index.html?room=...`, not a
+reconnect from an already-running client (which is how the old kiosk could
+get away with only ever sending a room id) -- so a custom map's mod
+dir never got loaded and the client failed to fetch the .bsp. Fixed by
+threading `map=` through the same redirect URL, which `main.js` already
+knew how to resolve into mod dirs; it just needed to stop *also* trying to
+locally single-player-load that same map now that a `room=` is also on the
+URL.
+
+## v1: No main menu, worldspace hub UI — superseded by v2
+
+**Goal:** players never see a traditional menu. They connect and spawn
+directly into a shared hub world. Everyone currently in the hub is
+implicitly "the party" — when one player starts a map or gamemode from a
+worldspace kiosk, everyone in the hub travels into that room together.
+Special gamemodes (deathmatch, horde, etc.) are also started from the hub,
+not from a menu screen.
+
+All 7 build-order items landed:
+
+1. Legacy canvas menu no longer auto-invokes anywhere on the connect/boot
+   path (`src/menu.js` still exists for options/keybinds, just never blocks
+   boot).
+2. Generic worldspace UI framework: `WorldspaceUITrigger` +
+   `WorldspaceUIPanel3D` (`src/worldspace_ui.js`), a reusable
+   proximity/interact primitive any future hub prop can reuse.
+3. The kiosk panel is a real object in the 3D scene (CSS3DRenderer layer,
+   `src/css3d_layer.js`), not a flat DOM overlay — oriented via
+   `Object3D.lookAt()` so it reads correctly from wherever a player is
+   standing.
+4. `horde` is in `HUB_MODES`, threaded through to the room process
+   (`server/game_server.js`). Along the way, fixed a real bug where horde's
+   wave timer ran off a wall-clock variable (`realtime` from `src/host.js`)
+   that's never advanced by the dedicated server's own frame loop — it now
+   uses `sv.time`, which both loops keep in sync.
+5. Hardened the "host starts for all" broadcast: a reentrancy guard on
+   `travelTo()` (a second TRAVEL_TO arriving mid-flight no longer races the
+   first into interleaved connect commands) and a `HUB_START_FAILED` reply
+   now actually reaches the kiosk panel instead of only the console.
+6. The hub runs on a deliberately chosen existing map (`q30__start`, the Q30
+   Deathmatch Jam pack's own map-select rotunda) instead of the vanilla
+   placeholder, with the kiosk trigger/panel at hand-picked fixed
+   coordinates (no more regex-parsing the loaded map's entity lump every
+   time). A real purpose-built "skybox + floor + kiosk" .bsp is still
+   blocked on no qbsp/vis/light compiler toolchain in-repo. Picking a loose
+   (non-pak) map for the first time also surfaced a portability bug — the
+   dedicated server's loose-file base path was hardcoded to the production
+   deploy path (`/opt/three-quake/`), silently breaking any loose map
+   outside that exact install; now derived relatively.
+7. Added the missing "leaving a level returns you to the hub" behavior — a
+   match room dying (or becoming unreachable) now falls back to rejoining
+   the hub instead of leaving the reconnect loop to give up silently.
+   Verified end-to-end with two real logged-in clients: one started a coop
+   match via `WS_SendHubStart` and the server confirmed both travelled
+   together into the same room; then a forced connection failure confirmed
+   the failed client automatically rejoined `HUBWLD`.
+
+### Decisions locked in
+
+- Players spawn straight into the hub — no connect/name screen first.
+- Starting a map/mode is host-picks-for-everyone (whoever interacts with
+  the kiosk starts it for the whole hub) — no vote/ready-up in v1.
+- Single shared hub world for v1, not sharded/instanced.
+- v1 hub interactions are minimal: pick a map + pick a gamemode. No
+  per-mode settings (frag limits, wave counts, etc.) or loadout selection
+  yet — that's future work below.
+
+---
+
+## Everything below is post-v1, unscheduled
+Pick items up once v1 ships, in whatever order sounds fun.
+
+## Engine & rendering
+
+### Modern Quake engine feature parity
+
+Community source ports (Ironwail, vkQuake, QuakeSpasm-Spiked/QSS, FTEQW)
+have accumulated a large set of quality-of-life and rendering upgrades
+over 25+ years since vanilla WinQuake/GLQuake. Worth cherry-picking from
+for this engine. Not all of these make sense for a browser/Three.js
+engine, but listed for reference:
+
+- **Uncapped/high framerate physics** — decoupling simulation rate from
+  frame rate so gameplay doesn't break above the original engine's
+  assumed tick rate (QSS/Ironwail).
+- **Colored lighting (`.lit` files)** — already flagged as a gap elsewhere
+  in this doc; every modern port supports this.
+- **Dynamic/RTLights** — real-time dynamic lights and shadows instead of
+  fully baked lightmaps (FTE, some vkQuake builds via ericw-tools rtlights
+  data).
+- **High-resolution external texture replacement** — loading upscaled or
+  hand-made replacement textures/skins over the base WAD/BSP textures,
+  keyed by original texture name.
+- **Higher-poly replacement models (MD3/glTF-style) for classic .mdl
+  monsters/weapons**, with fallback to the original low-poly model.
+- **Increased/removed engine limits** — MAX_EDICTS, max visible entities,
+  max particles, max dlights, etc. raised or made dynamic instead of
+  vanilla's hardcoded caps.
+- **BSP2 / 2PSB support and large coordinate range** — needed for big
+  modern maps (Arcane Dimensions-scale); already partially present per
+  earlier work (`hub_config.js` notes, recent commits mention BSP2).
+- **Particle system upgrades** — better explosion/blood/trail particles,
+  scriptable particle effects (QSS `.pfx`-style scripting).
+- **Full 32-bit color rendering and post-process AA/upscaling.**
+- **Wider FOV / widescreen-correct rendering** without the vanilla
+  fisheye distortion at high FOV.
+- **Mouse smoothing / raw input / high-DPI mouse support** for modern
+  precision aiming.
+- **OGG/MP3 music support** instead of requiring raw CD audio tracks.
+- **Searchable level-select / skill-select menus with map descriptions**
+  (Ironwail) — worth revisiting once v1's worldspace hub UI framework
+  exists, as a hub-native equivalent.
+- **Modern crosshair options** — configurable style, size, color, opacity.
+- **QuakeSpasm-Spiked protocol extensions** — `getentity`,
+  `forceinfokey`, and other builtins that let mods query more engine
+  state without new protocol messages; relevant if a real QuakeC VM
+  (CSQC) ever gets built (see below).
+- **Demo recording/playback quality improvements**, PNG screenshots,
+  video capture hooks.
+- **In-game console autocomplete** for cvars/commands.
+
+### Other engine ideas
+
+- **Modern lighting** — dynamic shadow maps, colored lightmaps (`.lit`
+  support doesn't exist at all currently — imported map packages' `.lit`
+  files are preserved on disk but ignored by the renderer).
+- **PBR-ish material upgrade path** for glTF-based assets (any non-Quake-
+  native content) so they don't look flat next to classic Quake textures.
+- **Postprocessing pipeline** (bloom, color grading, screen-space effects)
+  — `server/postprocess_addon_shim.js` suggests groundwork may already be
+  started here; worth reviewing before designing this fresh.
+- **Full CSQC engine support** — a real second QuakeC VM for the client,
+  new protocol messages, new draw builtins. Multi-day scope; previously
+  considered and deferred in favor of a native JS HUD (`cl_modernhud`).
+  Would become worth revisiting if mods start requiring real client-side
+  QuakeC.
+- **QuakeC compiler toolchain in-repo** — currently blocks several
+  gameplay ideas (weapon-stay ruleset, random loadouts, CTF tuning) that
+  need QuakeC source changes. Standing this up unblocks a whole class of
+  items at once.
+- **Non-.mdl model pipeline** — a parallel rendering + animation path for
+  glTF monsters/props (Three.js GLTFLoader) alongside the classic
+  alias-model (`gl_model.js`/`gl_mesh.js`) pipeline, plus a JS-driven think
+  path for entities without compiled QuakeC (`ent._jsThink` dispatched from
+  `SV_RunThink`).
+- **Netcode scalability** — revisit room-process-per-match model
+  (`room_process_manager.ts`) if concurrent room count grows; interest
+  management / area-of-interest replication if player counts per room grow
+  significantly beyond current design targets.
+- **WebTransport dead code cleanup** — `src/net_webtransport.js` and
+  `server/net_webtransport_server.ts` are unused leftovers from before the
+  WebSocket migration.
+
+## Content: other game support
+
+- **DOOM / DOOM II WAD support.** Load and play original DOOM/DOOM II IWADs
+  (and compatible PWADs) inside this engine. This is a genuinely separate
+  renderer/gameplay stack from Quake, not a reskin:
+  - **Different data format entirely** — DOOM WADs are 2.5D BSP-like maps
+    built from linedefs/sidedefs/sectors with a different node/subsector
+    structure than Quake's true-3D BSP, plus DOOM's own IWAD lump-based
+    asset layout (`WAD_LoadMod`-equivalent needed, distinct from
+    `COM_LoadMod`/`src/pak.js`'s Quake PAK/BSP path).
+  - **Software-renderer-style level geometry** (sectors with floor/ceiling
+    heights, no true room-over-room without hacks) needs its own
+    Three.js scene-building path — can't reuse `gl_model.js`/BSP renderer
+    as-is.
+  - **DOOM's own entity/AI/weapon logic** is not QuakeC — would need a
+    parallel gameplay layer (similar in spirit to the JS-driven `_jsThink`
+    idea above) rather than running through the QuakeC VM at all.
+  - **Networking**: DOOM has no native multiplayer protocol compatible
+    with this project's room/lobby system, so multiplayer DOOM would ride
+    on the existing WebSocket relay/room infrastructure, translating DOOM's
+    simpler deathmatch/coop model onto it — not the original DOOM netcode.
+  - **Licensing**: the DOOM/DOOM II source (id Tech 1) is GPL, so a
+    from-scratch or ported renderer is legally fine; IWADs themselves
+    still need to be user-supplied (same expectation as this repo already
+    has for Quake's shareware/registered paks).
+  - Given the scope, this is realistically its own multi-week subproject:
+    a WAD loader, a DOOM-specific level renderer, a DOOM-specific
+    gameplay/AI layer, and a bridge from that layer into the existing
+    room/lobby/hub-travel system so DOOM maps can be launched the same
+    way Quake maps are from the hub.
+
+## Gameplay & modes
+
+- **Persistent progression** — cosmetic unlocks, XP, or similar tied to
+  the existing per-account player-progress persistence, surfaced in the
+  hub worldspace rather than a menu screen.
+- **Capture the Flag** — Threewave CTF or similar, integrated the way
+  Quoth was.
+- **Weapon-stay/arena ruleset, random loadout on spawn, low-gravity mode,
+  friendly-fire toggle** — see details below; these become hub-selectable
+  mode variants once the worldspace UI framework (v1 build order item 2)
+  exists, rather than needing their own bespoke UI each.
+- **Duel/1v1 matchmaking** — a real room-type in the lobby server,
+  selectable from the hub.
+- **Cross-hub presence** — "who's online / doing what" shown as worldspace
+  UI in the hub itself (e.g. a scoreboard/status panel), rather than an
+  out-of-game wiki page, once the hub is the permanent home screen.
+- **Low-gravity mode** — `sv_gravity` is already a real cvar; just needs
+  exposing as a room option.
+- **Friendly-fire toggle** — Copper already supports `teamplay`; wire a
+  toggle into room creation.
+- **Weapon-stay / classic "arena" DM ruleset** — weapons don't disappear
+  on pickup, everyone always has full ammo. Needs a small QuakeC change
+  in `mods/copper/src/item_weap_ammo.qc` (blocked on the QuakeC compiler
+  toolchain item above).
+- **Random loadout on spawn** — roll a random starting weapon instead of
+  always the shotgun. QuakeC change in `client.qc`'s `PutClientInServer`.
+
+## Infra / social / admin
+
+- **Persistent stats/leaderboard** — frags/deaths/playtime tally, shown in
+  the hub or wiki. Player-progress persistence already exists per account;
+  this is mostly a small extension of that.
+- **Loadout or difficulty presets on Travel** — pick a starting weapon or
+  monster-difficulty multiplier when launching a room.
+- **Admin: import map packages by URL** — let an admin paste a direct
+  `.zip` URL (e.g. a quaddicted.com filebase link) in `admin_maps.html`
+  and have the server download + extract it instead of copying files
+  onto the box by hand. Scoped and partially prototyped (2026-09-11),
+  then deferred so the user can build it themselves with Claude. Design
+  notes for picking this back up:
+  - No map-loading code needs to change. `COM_LoadMod`/`COM_AddModSearchDir`
+    (`src/pak.js`) already turn a mapdb entry's `layers: [...]` array into
+    a loose-file search dir, and `src/travel_ui.js` already passes
+    `layers` straight through as the room's `-mod` list. So: extract the
+    zip as-is into `custom_maps/<id>/` and add that path to the map's
+    `layers` -- the existing pipeline (both browser client and
+    `game_server.js`) picks it up with zero changes.
+  - New server module (e.g. `server/map_import.ts`): fetch the URL with a
+    timeout + size cap, unzip in-memory (no zip lib in the repo yet --
+    `fflate` via `npm:fflate` worked fine in Deno), zip-slip guard on
+    every entry path, write into `../custom_maps/<id>/`, verify
+    `maps/<id>.bsp` exists in the result (else clean up and report which
+    `.bsp` files *were* found, so the admin can fix the Map ID field).
+  - New admin-only route `POST /admin/api/maps/import` (`{id, url}`) --
+    keep it single-purpose (fetch+extract only), let the client fold the
+    returned `custom_maps/<id>` dir into the Layers field and then call
+    the existing `POST`/`PATCH /admin/api/maps` unchanged.
+  - Confirmed scope with the user: URL import only (no manual file
+    upload), and the URL must be a **direct .zip link**, not a
+    quaddicted.com metadata/db page (those need HTML scraping to find
+    the actual download, deliberately skipped).
+  - `custom_maps/` should be gitignored (large, reproducible from the
+    source URL, same reasoning as pak files).
+  - Note: this engine has no `.lit` (colored lightmap) support at all
+    today -- an imported package's `.lit` file would be preserved on
+    disk but ignored by the renderer. Separate feature if wanted.
+
+## Done this session (for reference, not scheduled work)
+
+- Horde/wave survival mode (`horde_start`/`horde_stop`/`horde_status`,
+  `sv_horde_*` cvars) — `src/horde.js`.
+- Modern corner HUD (`cl_modernhud`) — `src/sbar.js`.
+- Kill feed + damage flash HUD — `src/hud_feed.js`.
+- Quoth mod support, BSP2 format support, wiki 3D model preview.
+
+## Notes
+
+- Session-scoped implementation notes (file:line specifics, decisions made
+  mid-build) should get folded into this file's "Current state" section as
+  work progresses, not left to rot in chat history.
+- When starting a new post-v1 item, move it under a "v2" (or similarly
+  named) build-order section at the top the same way v1 is structured now,
+  rather than leaving it mixed into the category lists below.

@@ -1,17 +1,38 @@
-// In-game "Travel" overlay: lets a player leave the hub (or any room) and
-// jump to one of the worlds in the (admin-editable) map catalog. Everyone who picks the
-// same world lands in the same room automatically (see roomIdForMap below),
-// no code-sharing needed -- that's the "load into worlds together" part of
-// the hub.
+// In-game "Travel" overlay: a solo escape hatch that lets a player already
+// inside a match jump to a different world in the (admin-editable) map
+// catalog, without going back through the hub page first. Everyone who
+// picks the same world from here lands in the same room automatically (see
+// roomIdForMap below) -- picking a level *together* is hub.html's job now,
+// this is just for "I'm done here, take me somewhere else."
 
 import { Cbuf_AddText } from './cmd.js';
-import { WS_CreateRoom } from './net_websocket.js';
+import { WS_CreateRoom, WS_SetConnectionLostHandler } from './net_websocket.js';
 import { Con_Printf } from './common.js';
-import { fetchMapdb } from './auth_client.js';
+import { fetchMapdb, logout } from './auth_client.js';
+import { COM_LoadMod } from './pak.js';
 
 let panelEl = null;
 let buttonEl = null;
 let mapdbCache = null;
+
+// Mod dirs already layered in this page session. main.js loads whatever
+// the initial page load needed (the hub's mods/copper, or a directly-linked
+// map's own layers) and reports them via TravelUI_Init -- anything a travel
+// destination needs beyond that has to be loaded here too, since travelling
+// reuses the same page/WS connection instead of a fresh navigation (see
+// travelTo below).
+const loadedModDirs = new Set();
+
+// Bumped on every travelTo() call, and checked after each await inside it.
+// The hub's "host starts for all" broadcast means this client can receive a
+// second TRAVEL_TO (a different player starting a different match, or a
+// stray double-click of its own) while an earlier one is still mid-flight
+// (loading mods, waiting on WS_CreateRoom, ...). Without this, both calls
+// would eventually reach the disconnect/connect Cbuf commands and interleave
+// them, leaving the player briefly connected to the wrong room before a
+// second reconnect corrects it. A call that finds itself stale here just
+// bails out silently -- the newer call is the one whose commands should win.
+let travelGeneration = 0;
 
 /**
  * Deterministic 6-char room ID for a given map id, so every client that
@@ -57,11 +78,33 @@ function escapeHTML( s ) {
 
 }
 
+/**
+ * Move this client to `mapId`, solo -- the manual picker below is the only
+ * caller now that group "start together" lives in hub.html instead.
+ */
 async function travelTo( mapId, entry ) {
+
+	const myGeneration = ++travelGeneration;
 
 	setStatus( 'Traveling to ' + entry.title + '…' );
 
 	try {
+
+		// Travelling reuses this same page/connection rather than a fresh
+		// navigation, so unlike main.js's initial-load path, any mod dirs
+		// this destination needs (custom maps, mission packs, ...) have to
+		// be layered in here -- otherwise the client tries to render a map
+		// whose loose files (bsp, textures, ...) it never fetched, even
+		// though the room server itself loaded them fine independently.
+		for ( const dir of ( entry.layers || [] ) ) {
+
+			if ( myGeneration !== travelGeneration ) return; // superseded mid-load
+			if ( loadedModDirs.has( dir ) ) continue;
+			setStatus( 'Loading ' + dir + '…' );
+			await COM_LoadMod( dir );
+			loadedModDirs.add( dir );
+
+		}
 
 		const lobby = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) || null;
 		if ( ! lobby ) throw new Error( 'No server configured (server-config.js)' );
@@ -76,6 +119,8 @@ async function travelTo( mapId, entry ) {
 			specificId: roomId,
 		} );
 
+		if ( myGeneration !== travelGeneration ) return; // superseded mid-create
+
 		Cbuf_AddText( 'disconnect\n' );
 		Cbuf_AddText( 'connect "' + serverUrl + '?room=' + roomId + '"\n' );
 
@@ -84,7 +129,7 @@ async function travelTo( mapId, entry ) {
 	} catch ( e ) {
 
 		Con_Printf( 'Travel failed: ' + e.message + '\n' );
-		setStatus( 'Failed: ' + e.message, true );
+		if ( myGeneration === travelGeneration ) setStatus( 'Failed: ' + e.message, true );
 
 	}
 
@@ -144,7 +189,39 @@ function togglePanel() {
 
 }
 
-export function TravelUI_Init() {
+/**
+ * "Leaving a level returns you to the hub" (v1 build order item 7). The hub
+ * is a plain web page now, not a room -- so returning to it is just a page
+ * navigation, no disconnect/reconnect dance needed. cls/sv state doesn't
+ * need cleanup either: the browser's about to tear this whole page down.
+ */
+export function TravelUI_ReturnToHub() {
+
+	window.location.href = 'hub.html';
+
+}
+
+export function TravelUI_Init( alreadyLoadedModDirs ) {
+
+	for ( const dir of ( alreadyLoadedModDirs || [] ) ) loadedModDirs.add( dir );
+
+	WS_SetConnectionLostHandler( ( failedHost, error ) => {
+
+		// The stored token itself was the problem (expired/revoked/never
+		// valid) -- logging back in is the only way forward, and hub.html's
+		// own login gate handles that once there.
+		if ( error && error.authFailure ) {
+
+			Con_Printf( 'Session expired -- returning to login.\n' );
+			logout();
+			return;
+
+		}
+
+		Con_Printf( 'Connection lost -- returning to the hub.\n' );
+		TravelUI_ReturnToHub();
+
+	} );
 
 	const style = document.createElement( 'style' );
 	style.textContent = `

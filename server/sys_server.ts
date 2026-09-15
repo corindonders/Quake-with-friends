@@ -15,6 +15,7 @@ const _quietLogAllowPatterns: RegExp[] = [
 	/^Connection closed:/,
 	/^Client .*(connected|removed)\b/,
 	/^Spawning server for map:/,
+	/^Hub start:/,
 	/^SpawnServer:/,
 	/^Server initialized!/,
 	/^Room .* idle for /,

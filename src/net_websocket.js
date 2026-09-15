@@ -25,8 +25,7 @@
 import { Con_Printf, Con_DPrintf, SZ_Clear, SZ_Write } from './common.js';
 import { NET_NewQSocket, NET_FreeQSocket } from './net_main.js';
 import { net_message } from './net.js';
-import { M_ConnectionError, M_Menu_Main_f } from './menu.js';
-import { set_key_dest, key_menu } from './keys.js';
+import { M_ConnectionError } from './menu.js';
 import { Cbuf_AddText } from './cmd.js';
 
 let ws_initialized = false;
@@ -79,10 +78,8 @@ function WS_ScheduleReconnect() {
 
 	if ( reconnectAttempt >= MAX_RECONNECT_ATTEMPTS ) {
 
-		Con_Printf( 'Could not reconnect after ' + MAX_RECONNECT_ATTEMPTS + ' attempts. Use the menu to try again.\n' );
+		Con_Printf( 'Could not reconnect after ' + MAX_RECONNECT_ATTEMPTS + ' attempts.\n' );
 		WS_CancelReconnect();
-		M_Menu_Main_f();
-		set_key_dest( key_menu );
 		return;
 
 	}
@@ -106,6 +103,25 @@ function WS_ScheduleReconnect() {
 export function WS_SetAuthToken( token ) {
 
 	ws_authToken = token || '';
+
+}
+
+let ws_gameConn = null; // the live gameplay connection, if any
+let ws_connectionLostHandler = null;
+
+// Fires once the auto-reconnect loop below finally gives up on a connection
+// (retries exhausted, or an initial/retry connect attempt failed outright)
+// -- the game-ending "leaving a level returns you to the hub" case (see
+// v1 build order item 7): a match room shutting down (naturally, on idle
+// timeout, ...) looks identical to a network blip from here, so this fires
+// for both, and it's up to the handler (travel_ui.js) to decide where that
+// leaves the player. Called with (host, error): `host` is the URL that
+// failed; `error.authFailure` is true when the token itself was the
+// problem (expired/revoked/never valid) -- the handler sends the player to
+// login.html instead of the hub in that case.
+export function WS_SetConnectionLostHandler( handler ) {
+
+	ws_connectionLostHandler = handler;
 
 }
 
@@ -385,7 +401,16 @@ export async function WS_Connect( host ) {
 
 				if ( parsed.error ) {
 
-					reject( new Error( parsed.error ) );
+					const err = new Error( parsed.error );
+					// The lobby sends this exact text when the session token
+					// itself is the problem (expired/revoked/never valid) --
+					// distinct from "room's gone" or "server unreachable",
+					// both of which the connection-lost handler below
+					// reasonably retries/falls back to the hub for. Retrying
+					// an invalid token just fails the same way forever, so
+					// this needs to send the player to login.html instead.
+					if ( parsed.error.indexOf( 'Not logged in' ) === 0 ) err.authFailure = true;
+					reject( err );
 					return;
 
 				}
@@ -426,10 +451,13 @@ export async function WS_Connect( host ) {
 
 		} );
 
-		// Now in game-data mode: binary frames are Quake packets.
+		// Now in game-data mode: binary frames are Quake packets. No control
+		// messages arrive over this connection anymore -- "start together"
+		// is hub.html's job, decided before this connection even opens -- so
+		// a stray text frame here is unexpected; ignore it rather than error.
 		socket.addEventListener( 'message', ( event ) => {
 
-			if ( typeof event.data === 'string' ) return; // ignore stray control frames
+			if ( typeof event.data === 'string' ) return;
 
 			const bytes = new Uint8Array( event.data );
 			if ( bytes.length < 1 ) return;
@@ -456,6 +484,7 @@ export async function WS_Connect( host ) {
 
 		ws_connections.set( sock, conn );
 		sock.driverdata = conn;
+		ws_gameConn = conn;
 
 		Con_Printf( 'WebSocket connection established\n' );
 
@@ -473,7 +502,9 @@ export async function WS_Connect( host ) {
 
 		// A retry attempt itself failed (server/room still unreachable) --
 		// keep retrying with backoff instead of bailing out to the menu.
-		if ( isReconnecting && reconnectAttempt < MAX_RECONNECT_ATTEMPTS ) {
+		// Not for an auth failure though: retrying with the same bad token
+		// can only ever fail the same way.
+		if ( ! error.authFailure && isReconnecting && reconnectAttempt < MAX_RECONNECT_ATTEMPTS ) {
 
 			WS_ScheduleReconnect();
 			return null;
@@ -488,9 +519,8 @@ export async function WS_Connect( host ) {
 
 		}
 
-		M_Menu_Main_f();
-		set_key_dest( key_menu );
-
+		Con_Printf( 'Connection failed. Check the console for details.\n' );
+		if ( ws_connectionLostHandler != null ) ws_connectionLostHandler( host, error );
 		return null;
 
 	}
@@ -604,5 +634,6 @@ export function WS_Close( sock ) {
 	try { conn.socket.close(); } catch ( e ) { /* ignore */ }
 
 	ws_connections.delete( sock );
+	if ( ws_gameConn === conn ) ws_gameConn = null;
 
 }

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Quake with Friends — Hub</title>
+	<link rel="icon" type="image/svg+xml" href="icon.svg">
+	<link rel="apple-touch-icon" href="icon.png">
+	<style>
+		:root {
+			--bg: #0b0908;
+			--panel: rgba(23, 19, 16, 0.88);
+			--panel-border: #332920;
+			--text: #d8cfc4;
+			--text-dim: #8a7d6e;
+			--accent: #b23b2e;
+			--accent-bright: #e0523f;
+			--ok: #6f9b4a;
+		}
+
+		* { box-sizing: border-box; }
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			min-height: 100%;
+			background: var(--bg) url('background.webp') center / cover no-repeat fixed;
+			color: var(--text);
+			font-family: 'Trebuchet MS', 'Segoe UI', Verdana, sans-serif;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.card {
+			width: 520px;
+			max-width: calc(100vw - 32px);
+			background: var(--panel);
+			backdrop-filter: blur(6px);
+			border: 1px solid var(--panel-border);
+			border-radius: 8px;
+			padding: 32px;
+			margin: 24px 0;
+		}
+
+		.card > img { width: 44px; height: 44px; display: block; margin: 0 auto 12px; }
+
+		h1 {
+			margin: 0 0 4px;
+			font-size: 18px;
+			text-align: center;
+			font-weight: 600;
+		}
+
+		p.sub {
+			margin: 0 0 24px;
+			text-align: center;
+			font-size: 12.5px;
+			color: var(--text-dim);
+		}
+
+		.roster {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+			gap: 16px 12px;
+			min-height: 96px;
+			align-content: start;
+		}
+
+		.player {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 7px;
+			min-width: 0;
+		}
+
+		.avatar {
+			width: 56px;
+			height: 56px;
+			border-radius: 6px;
+			background-color: #201a15;
+			background-image: url('icons/face1.png');
+			background-repeat: no-repeat;
+			background-position: center;
+			background-size: 42px 42px;
+			image-rendering: pixelated;
+			border: 1px solid rgba(0, 0, 0, 0.45);
+			box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -2px 6px rgba(0, 0, 0, 0.45);
+			filter: hue-rotate(var(--hue, 0deg)) saturate(1.3);
+		}
+
+		.player.self .avatar {
+			border-color: var(--accent-bright);
+			box-shadow: 0 0 0 2px var(--accent), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		}
+
+		.pname {
+			font-size: 12px;
+			max-width: 100%;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			text-align: center;
+		}
+
+		.player.self .pname { color: var(--accent-bright); }
+
+		.empty {
+			grid-column: 1 / -1;
+			align-self: center;
+			text-align: center;
+			font-size: 12.5px;
+			color: var(--text-dim);
+			padding: 24px 0;
+		}
+
+		.sep {
+			margin: 22px 0 4px;
+			border: none;
+			border-top: 1px solid var(--panel-border);
+		}
+
+		.launch {
+			margin-top: 22px;
+			padding-top: 20px;
+			border-top: 1px solid var(--panel-border);
+		}
+
+		.launch label {
+			display: block;
+			font-size: 11px;
+			color: var(--text-dim);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			margin-bottom: 6px;
+		}
+
+		.launch-row {
+			display: flex;
+			gap: 10px;
+		}
+
+		select {
+			flex: 1;
+			min-width: 0;
+			background: #0f0c0a;
+			border: 1px solid var(--panel-border);
+			color: var(--text);
+			padding: 10px 12px;
+			border-radius: 4px;
+			font-size: 13.5px;
+			outline: none;
+		}
+
+		select:focus { border-color: var(--accent); }
+
+		button#startBtn {
+			background: var(--accent);
+			color: #fff;
+			border: none;
+			padding: 0 22px;
+			border-radius: 4px;
+			font-size: 14px;
+			font-weight: 600;
+			cursor: pointer;
+			letter-spacing: 0.3px;
+		}
+
+		button#startBtn:hover:not(:disabled) { background: var(--accent-bright); }
+		button#startBtn:disabled { opacity: 0.5; cursor: default; }
+
+		.launch-status {
+			margin-top: 9px;
+			font-size: 12px;
+			min-height: 15px;
+			color: var(--text-dim);
+		}
+
+		.launch-status.err { color: var(--accent-bright); }
+
+		.foot {
+			margin-top: 20px;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 12px;
+			font-size: 12px;
+			color: var(--text-dim);
+		}
+
+		.foot a { color: var(--text-dim); text-decoration: none; }
+		.foot a:hover { color: var(--accent-bright); }
+		.foot nav { display: flex; gap: 12px; }
+
+		.status {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 7px;
+			margin-bottom: 18px;
+			font-size: 11.5px;
+			color: var(--text-dim);
+		}
+
+		.dot {
+			width: 7px;
+			height: 7px;
+			border-radius: 50%;
+			background: var(--text-dim);
+		}
+
+		.status.live .dot { background: var(--ok); }
+		.status.down .dot { background: var(--accent-bright); }
+	</style>
+</head>
+<body>
+
+	<div class="card">
+		<img src="icon.svg" alt="">
+		<h1>The Hub</h1>
+		<p class="sub" id="sub">Who's here right now.</p>
+
+		<div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+
+		<div class="roster" id="roster">
+			<div class="empty">Loading…</div>
+		</div>
+
+		<div class="launch">
+			<label for="mapSelect">Pick a level -- everyone here starts it together</label>
+			<div class="launch-row">
+				<select id="mapSelect" disabled><option>Loading maps…</option></select>
+				<button id="startBtn" disabled>Start</button>
+			</div>
+			<div class="launch-status" id="launchStatus"></div>
+		</div>
+
+		<hr class="sep">
+
+		<div class="foot">
+			<span>Signed in as <span id="whoami" style="color: var(--text);"></span></span>
+			<nav>
+				<a href="maps.html">Maps</a>
+				<a href="#" id="logoutLink">log out</a>
+			</nav>
+		</div>
+	</div>
+
+	<script src="server-config.js"></script>
+	<script type="module">
+
+		import { requireSession, logout, fetchMapdb } from './src/auth_client.js';
+
+		const session = requireSession();
+		if ( session !== null ) {
+
+			document.getElementById( 'whoami' ).textContent = session.username;
+
+			document.getElementById( 'logoutLink' ).addEventListener( 'click', ( e ) => {
+
+				e.preventDefault();
+				logout();
+
+			} );
+
+			loadMapPicker();
+			startPresence( session );
+
+		}
+
+		/**
+		 * A stable hue per player, so the same person is always the same
+		 * shade of the same base face icon -- Quake's own "shirt colour"
+		 * trick for telling players apart, just done with CSS instead of a
+		 * palette-remapped skin. Cheap string hash; no avatar assets to
+		 * manage beyond the one icon.
+		 */
+		function avatarHue( name ) {
+
+			let hash = 0;
+			for ( let i = 0; i < name.length; i ++ ) hash = ( hash * 31 + name.charCodeAt( i ) ) | 0;
+
+			return Math.abs( hash ) % 360;
+
+		}
+
+		function renderRoster( players, me ) {
+
+			const roster = document.getElementById( 'roster' );
+			const sub = document.getElementById( 'sub' );
+
+			roster.innerHTML = '';
+
+			if ( players.length === 0 ) {
+
+				sub.textContent = 'Who\'s here right now.';
+				const empty = document.createElement( 'div' );
+				empty.className = 'empty';
+				empty.textContent = 'Nobody here yet.';
+				roster.appendChild( empty );
+				return;
+
+			}
+
+			sub.textContent = players.length === 1
+				? 'One player here right now.'
+				: players.length + ' players here right now.';
+
+			for ( const player of players ) {
+
+				const isSelf = player.username === me;
+
+				const el = document.createElement( 'div' );
+				el.className = isSelf ? 'player self' : 'player';
+
+				const avatar = document.createElement( 'div' );
+				avatar.className = 'avatar';
+				avatar.style.setProperty( '--hue', avatarHue( player.username ) + 'deg' );
+
+				const name = document.createElement( 'div' );
+				name.className = 'pname';
+				name.textContent = isSelf ? player.username + ' (you)' : player.username;
+				name.title = player.username;
+
+				el.appendChild( avatar );
+				el.appendChild( name );
+				roster.appendChild( el );
+
+			}
+
+		}
+
+		function setStatus( state, text ) {
+
+			const status = document.getElementById( 'status' );
+			status.className = 'status' + ( state ? ' ' + state : '' );
+			document.getElementById( 'statusText' ).textContent = text;
+
+		}
+
+		function setLaunchStatus( text, isError ) {
+
+			const el = document.getElementById( 'launchStatus' );
+			el.textContent = text || '';
+			el.className = 'launch-status' + ( isError ? ' err' : '' );
+
+		}
+
+		/**
+		 * Populates the level picker. Vanilla episode maps are left out --
+		 * they're scripted single-player intro/outro levels, not built with
+		 * extra players in mind -- everything else (mod campaigns, standalone
+		 * customs, deathmatch arenas) is fair game. The server infers coop vs.
+		 * deathmatch from the same category when Start is pressed (see
+		 * hubModeForCategory in server/lobby_server.js) -- no mode picker here.
+		 */
+		async function loadMapPicker() {
+
+			const select = document.getElementById( 'mapSelect' );
+
+			let maps;
+			try {
+
+				maps = await fetchMapdb();
+
+			} catch ( e ) {
+
+				select.innerHTML = '<option>Could not load maps</option>';
+				return;
+
+			}
+
+			const entries = Object.entries( maps )
+				.filter( ( [ , entry ] ) => entry.category !== 'vanilla' )
+				.sort( ( a, b ) => a[ 1 ].title.localeCompare( b[ 1 ].title ) );
+
+			if ( entries.length === 0 ) {
+
+				select.innerHTML = '<option>No maps available</option>';
+				return;
+
+			}
+
+			select.innerHTML = entries
+				.map( ( [ id, entry ] ) => '<option value="' + id + '">' + entry.title + '</option>' )
+				.join( '' );
+			select.disabled = false;
+
+			updateStartEnabled();
+
+		}
+
+		function updateStartEnabled() {
+
+			const select = document.getElementById( 'mapSelect' );
+			const startBtn = document.getElementById( 'startBtn' );
+
+			startBtn.disabled = select.disabled || ! window.__tqPresenceLive;
+
+		}
+
+		/**
+		 * Holds one WebSocket open to the lobby for as long as this page is
+		 * open -- that open socket *is* the player's presence in the hub, so
+		 * closing the tab drops them from everyone else's roster with no
+		 * timeout or heartbeat needed. Reconnects on drop so a blip doesn't
+		 * strand the page showing a stale list.
+		 */
+		function startPresence( session ) {
+
+			const lobby = ( window.THREE_QUAKE_SERVER && window.THREE_QUAKE_SERVER.lobby ) || 'localhost:4433';
+			const url = ( location.protocol === 'https:' ? 'wss://' : 'ws://' ) + lobby + '/ws';
+
+			let retry = null;
+			let socket = null;
+
+			function connect() {
+
+				socket = new WebSocket( url );
+
+				socket.addEventListener( 'open', () => {
+
+					setStatus( 'live', 'Live' );
+					window.__tqPresenceLive = true;
+					updateStartEnabled();
+					socket.send( JSON.stringify( { type: 'presence', token: session.token } ) );
+
+				} );
+
+				socket.addEventListener( 'message', ( event ) => {
+
+					if ( typeof event.data !== 'string' ) return;
+
+					let msg;
+					try { msg = JSON.parse( event.data ); } catch ( e ) { return; }
+
+					if ( msg.error ) {
+
+						setStatus( 'down', msg.error );
+						return;
+
+					}
+
+					if ( msg.type === 'presence' ) {
+
+						renderRoster( msg.players || [], session.username );
+
+					} else if ( msg.type === 'start' ) {
+
+						// The host (could be anyone here, including this
+						// client) pressed Start -- everyone on the page
+						// travels into the new room together.
+						setLaunchStatus( 'Starting…' );
+						// map rides along too, not just room: this is a fresh
+						// page load (not the same running client the old
+						// in-world kiosk broadcast reached), so main.js needs
+						// it to resolve the level's mod dirs from the map
+						// catalog before it can render anything.
+						window.location.href = 'index.html?room=' + encodeURIComponent( msg.roomId ) +
+							'&map=' + encodeURIComponent( msg.mapId );
+
+					} else if ( msg.type === 'start_failed' ) {
+
+						setLaunchStatus( msg.error || 'Could not start the match.', true );
+						document.getElementById( 'startBtn' ).disabled = false;
+
+					}
+
+				} );
+
+				const drop = () => {
+
+					window.__tqPresenceLive = false;
+					updateStartEnabled();
+
+					if ( retry !== null ) return;
+					setStatus( 'down', 'Reconnecting…' );
+					retry = setTimeout( () => { retry = null; connect(); }, 2000 );
+
+				};
+
+				socket.addEventListener( 'close', drop );
+				socket.addEventListener( 'error', drop );
+
+			}
+
+			connect();
+
+			document.getElementById( 'startBtn' ).addEventListener( 'click', () => {
+
+				const mapId = document.getElementById( 'mapSelect' ).value;
+				if ( ! mapId || socket == null || socket.readyState !== WebSocket.OPEN ) return;
+
+				document.getElementById( 'startBtn' ).disabled = true;
+				setLaunchStatus( 'Starting…' );
+				socket.send( JSON.stringify( { type: 'start', mapId, token: session.token } ) );
+
+			} );
+
+		}
+
+	</script>
+
+</body>
+</html>

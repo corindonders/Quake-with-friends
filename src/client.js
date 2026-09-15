@@ -20,7 +20,14 @@ export const SIGNONS = 4; // signon messages to receive before connected
 // (Arcane Dimensions) need more headroom than 1996-era maps did.
 export const MAX_DLIGHTS = 32;
 export const MAX_BEAMS = 64;
-export const MAX_EFRAGS = 4096;
+// Raised again from 4096, then 16384: a large ericw-tools BSP2 map (e.g.
+// one with ~29000 leafs) needs far more efrags than even AD's maps did,
+// now that Mod_LeafPVS/SV_FatPVS actually report all of a map's leafs as
+// visible instead of silently truncating past MAX_MAP_LEAFS (see
+// gl_model.js) -- a single large brush entity (a big func_plat/func_door/
+// func_illusionary spanning much of the map) needs one efrag per leaf it
+// touches, and this map has several.
+export const MAX_EFRAGS = 65536;
 export const MAX_TEMP_ENTITIES = 512; // lightning bolts, etc
 export const MAX_STATIC_ENTITIES = 4096;
 export const MAX_VISEDICTS = 2048;
@@ -110,6 +117,11 @@ export class dlight_t {
 		this.decay = 0; // drop this each second
 		this.minlight = 0; // don't add when contributing less
 		this.key = 0;
+		// 0-1 RGB tint, white by default. Only visible on maps with colored
+		// (.lit) lightmaps -- see R_AddDynamicLights in gl_rsurf.js, which
+		// falls back to plain white-light math on mono lightmaps same as
+		// vanilla always did.
+		this.color = new Float32Array( [ 1, 1, 1 ] );
 
 	}
 

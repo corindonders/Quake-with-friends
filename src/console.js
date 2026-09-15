@@ -66,7 +66,6 @@ let _Draw_String = null;
 let _Draw_ConsoleBackground = null;
 let _SCR_UpdateScreen = null;
 let _SCR_EndLoadingPlaque = null;
-let _M_Menu_Main_f = null;
 let _S_LocalSound = null;
 
 // Static variable for Con_Print
@@ -83,7 +82,6 @@ export function Con_SetExternals( externals ) {
 	if ( externals.Draw_ConsoleBackground ) _Draw_ConsoleBackground = externals.Draw_ConsoleBackground;
 	if ( externals.SCR_UpdateScreen ) _SCR_UpdateScreen = externals.SCR_UpdateScreen;
 	if ( externals.SCR_EndLoadingPlaque ) _SCR_EndLoadingPlaque = externals.SCR_EndLoadingPlaque;
-	if ( externals.M_Menu_Main_f ) _M_Menu_Main_f = externals.M_Menu_Main_f;
 	if ( externals.S_LocalSound ) _S_LocalSound = externals.S_LocalSound;
 	if ( externals.scr_disabled_for_loading !== undefined ) _scr_disabled_for_loading = externals.scr_disabled_for_loading;
 
@@ -108,10 +106,6 @@ export function Con_ToggleConsole_f() {
 			set_key_dest( key_game );
 
 			key_lines[ edit_line ][ 1 ] = 0; // clear any typing
-
-		} else {
-
-			if ( _M_Menu_Main_f ) _M_Menu_Main_f();
 
 		}
 

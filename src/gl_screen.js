@@ -39,7 +39,7 @@ let oldfov = 0;
 let oldscreensize = 0;
 
 export const scr_viewsize = { name: 'viewsize', string: '100', value: 100, archive: true };
-const scr_fov = { name: 'fov', string: '90', value: 90 };
+export const scr_fov = { name: 'fov', string: '90', value: 90 };
 const scr_conspeed = { name: 'scr_conspeed', string: '300', value: 300 };
 const scr_centertime = { name: 'scr_centertime', string: '2', value: 2 };
 const scr_showram = { name: 'showram', string: '1', value: 1 };
@@ -136,6 +136,16 @@ for a few moments
 */
 export function SCR_CenterPrint( str ) {
 
+	// Some maps' trigger "message" text has a literal backslash-n (two raw
+	// characters, from a mapper typing \n in their editor's message field
+	// and expecting it to become a line break) instead of an actual newline
+	// byte -- entity string values are never escape-processed by the BSP
+	// compiler (only QuakeC source literals are), so this renders as a
+	// garbled "\n" stuck mid-line in every engine, not just this one. Modern
+	// source ports commonly paper over this exact common mistake; do the
+	// same here rather than showing the raw mapper typo.
+	str = str.replace( /\\n/g, '\n' );
+
 	scr_centerstring = str.substring( 0, 1023 );
 	scr_centertime_off = scr_centertime.value;
 	scr_centertime_start = _cl.time;
@@ -148,6 +158,16 @@ export function SCR_CenterPrint( str ) {
 			scr_center_lines ++;
 
 	}
+
+}
+
+// Widest line the 8px font fits across the virtual 2D screen. Quake hardcoded
+// 40 because conwidth was always 320; here the virtual width varies with the
+// window, and anything past the cap is dropped rather than wrapped -- so a
+// fixed 40 silently ate the tail of longer map messages.
+function _maxCols() {
+
+	return Math.max( 20, Math.floor( _vid.width / 8 ) );
 
 }
 
@@ -180,7 +200,7 @@ function SCR_DrawCenterString() {
 
 		// scan the width of the line
 		let l;
-		for ( l = 0; l < 40; l ++ ) {
+		for ( l = 0; l < _maxCols(); l ++ ) {
 
 			if ( start + l >= scr_centerstring.length || scr_centerstring[ start + l ] === '\n' )
 				break;
@@ -628,7 +648,7 @@ function SCR_DrawNotifyString() {
 	while ( start < scr_notifystring.length ) {
 
 		let l;
-		for ( l = 0; l < 40; l ++ ) {
+		for ( l = 0; l < _maxCols(); l ++ ) {
 
 			if ( start + l >= scr_notifystring.length || scr_notifystring[ start + l ] === '\n' )
 				break;

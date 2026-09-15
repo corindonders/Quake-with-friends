@@ -11,7 +11,8 @@ import { Sys_Printf, Sys_FloatTime } from '../src/sys.js';
 import { COM_FetchPak, COM_AddPack, COM_SetLooseFileBasePath, COM_EnsureFile, COM_LoadMod } from '../src/pak.js';
 import { Cbuf_Init, Cbuf_Execute, Cmd_Init } from '../src/cmd.js';
 import { Host_InitCommands } from '../src/host_cmd.js';
-import { deathmatch, samelevel, noexit, sys_ticrate } from '../src/host.js';
+import { deathmatch, coop, teamplay, teamcount, samelevel, noexit, sys_ticrate } from '../src/host.js';
+import { Horde_Start, Horde_Think } from '../src/horde.js';
 import { cls, ca_dedicated } from '../src/client.js';
 import { Memory_Init } from '../src/zone.js';
 import { PR_Init } from '../src/pr_edict.js';
@@ -68,6 +69,8 @@ const CONFIG = {
 	mod: '',              // Comma-separated mod dirs, e.g. "mods/copper,mods/frogsbog_v1/copper"
 	roomId: null,        // Room ID if spawned by lobby server
 	idleTimeout: 300,    // Seconds to wait before exiting when empty (room mode)
+	mode: 'ffa',         // Game mode chosen when the hub started this room (server/lobby_server.js)
+	teamCount: 2,        // Teams to split players across in the team modes
 };
 
 // Parse command line arguments
@@ -89,6 +92,10 @@ function parseArgs() {
 			CONFIG.roomId = args[++i];
 		} else if (arg === '-idletimeout' && args[i + 1]) {
 			CONFIG.idleTimeout = parseInt(args[++i], 10);
+		} else if (arg === '-mode' && args[i + 1]) {
+			CONFIG.mode = args[++i];
+		} else if (arg === '-teamcount' && args[i + 1]) {
+			CONFIG.teamCount = parseInt(args[++i], 10);
 		}
 	}
 }
@@ -115,6 +122,45 @@ setInterval(() => {
 	console.error('[WATCHDOG] tick=' + watchdogCount + ' time=' + Math.floor(performance.now() / 1000));
 }, 5000);
 
+
+function setCvar(cvar, value) {
+	cvar.value = value;
+	cvar.string = String(value);
+}
+
+/**
+ * Translate a hub-chosen mode ('ffa' | 'teams' | 'teams_ai' | 'coop' | 'horde')
+ * into the deathmatch/coop/teamplay cvars the progs actually read.
+ *
+ * 'teams_ai' is deliberately identical to 'teams' for now -- there is no bot
+ * spawning yet, so its reserved AI slots simply stay empty.
+ *
+ * 'horde' uses the same non-PvP cvars as 'coop' (survival against monsters,
+ * not other players) -- the wave spawning itself is driven entirely by
+ * src/horde.js (see the Horde_Start call after SV_SpawnServer below), not
+ * by anything QuakeC/progs reads directly.
+ */
+function Host_SetMode(mode, teams) {
+	if (mode === 'coop' || mode === 'horde') {
+		setCvar(deathmatch, 0);
+		setCvar(coop, 1);
+		setCvar(teamplay, 0);
+		setCvar(teamcount, 0);
+	} else if (mode === 'teams' || mode === 'teams_ai') {
+		setCvar(deathmatch, 1);
+		setCvar(coop, 0);
+		setCvar(teamplay, 1);
+		setCvar(teamcount, teams > 1 ? teams : 2);
+	} else {
+		setCvar(deathmatch, 1);
+		setCvar(coop, 0);
+		setCvar(teamplay, 0);
+		setCvar(teamcount, 0);
+	}
+
+	Sys_Printf('Game mode: %s (deathmatch=%d coop=%d teamplay=%d teamcount=%d)\n',
+		mode, deathmatch.value, coop.value, teamplay.value, teamcount.value);
+}
 
 /**
  * Initialize the game server
@@ -200,11 +246,11 @@ async function Host_Init_Server() {
 	SV_Init();
 	PlayerProgress_Init();
 
-	// Set deathmatch mode - this ensures respawn() doesn't restart the entire server
-	// We set the value directly on the imported cvar object (same object that sv_main.js uses)
-	deathmatch.value = 1;
-	deathmatch.string = '1';
-	Sys_Printf('Deathmatch mode enabled (deathmatch=%d)\n', deathmatch.value);
+	// Apply the game mode the hub picked. Every mode still sets one of
+	// deathmatch/coop, which is what keeps respawn() from restarting the
+	// whole server. We set values directly on the imported cvar objects
+	// (same objects sv_main.js and the progs use).
+	Host_SetMode(CONFIG.mode, CONFIG.teamCount);
 
 	// Set samelevel to prevent level exits from changing maps (QuakeWorld progs)
 	// 0 = normal (allow exit), 1 = same map, 2 = kill on exit, 3 = kill if not on "start" map
@@ -239,8 +285,13 @@ async function Host_Init_Server() {
 		Sys_Printf('Loaded %s\n', extraPakPath);
 	}
 
-	// Set base path for on-demand loose file loading (custom maps not in PAK)
-	COM_SetLooseFileBasePath('/opt/three-quake/');
+	// Set base path for on-demand loose file loading (custom maps not in PAK).
+	// Relative, not a hardcoded absolute path: room_process_manager.ts always
+	// spawns this process with cwd set to server/ (see its `cwd: serverDir`),
+	// regardless of where the repo is checked out, so '../' -> repo root
+	// works the same in local dev as in a production deploy -- matching how
+	// CONFIG.pakPath's own default ('../pak0.pak') already resolves pak0.
+	COM_SetLooseFileBasePath('../');
 
 	// Layer any mod dirs onto the search path (paks, progs.dat override, loose
 	// files) -- same mechanism and wire format (comma-separated mods/<name>
@@ -282,6 +333,15 @@ async function Host_Init_Server() {
 	Sys_Printf('Spawning server for map: ' + CONFIG.defaultMap + '\n');
 	await COM_EnsureFile('maps/' + CONFIG.defaultMap + '.bsp');
 	await SV_SpawnServer(CONFIG.defaultMap);
+
+	// Horde mode is a JS-driven wave spawner (src/horde.js), not something
+	// progs/cvars start on their own -- kick it off once the map/server is
+	// up. Horde_Start just arms the countdown to wave 1; the actual spawn
+	// waits for a connected, spawned player (see _pickSpawnOrigin), so this
+	// is safe to call before anyone has joined the room yet.
+	if (CONFIG.mode === 'horde') {
+		Horde_Start();
+	}
 
 	Sys_Printf('\nServer initialized!\n');
 	Sys_Printf('  Port: ' + CONFIG.port + '\n');
@@ -349,6 +409,7 @@ function Host_ServerFrame() {
 
 	// Run physics
 	SV_Physics();
+	Horde_Think();
 	const t2 = performance.now();
 
 	// Send messages to all clients

@@ -42,7 +42,8 @@ const _quietLogAllowPatterns = [
 	/^Unhandled promise rejection:/,
 	/^WebTransport server listening /,
 	/^WebTransport server driver initialized/,
-	/^NET_Init complete/
+	/^NET_Init complete/,
+	/^Game mode:/
 ];
 
 function _isDenoRuntime() {

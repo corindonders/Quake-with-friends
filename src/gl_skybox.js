@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 import { Con_Printf } from './console.js';
+import { COM_EnsureFile, COM_LoadFile } from './pak.js';
 
 const _loader = new TGALoader();
 const _cache = new Map(); // skyName -> THREE.CubeTexture
@@ -135,17 +136,28 @@ function _loadCubeTexture( name ) {
 	const cached = _cache.get( name );
 	if ( cached ) return Promise.resolve( cached );
 
-	const loads = FACE_SUFFIXES.map( ( suffix ) => new Promise( ( resolve, reject ) => {
+	const loads = FACE_SUFFIXES.map( ( suffix ) => ( async () => {
 
-		const url = 'gfx/env/' + name + suffix + '.tga';
-		// TGALoader is a DataTextureLoader: texture.image is raw
+		// Fetch through the same mod-layered search path as every other
+		// loose asset (COM_EnsureFile/COM_LoadFile in pak.js) instead of a
+		// plain root-relative fetch -- a custom map's own skybox (layered
+		// in via its mapdb `layers` entry, e.g. custom_maps/<id>/gfx/env/)
+		// would otherwise never be found, since gl_skybox.js previously
+		// bypassed that lookup entirely.
+		const filename = 'gfx/env/' + name + suffix + '.tga';
+		const found = await COM_EnsureFile( filename );
+		if ( ! found ) throw new Error( filename + ' not found' );
+
+		const buffer = COM_LoadFile( filename );
+
+		// TGALoader is a DataTextureLoader: parse() returns raw
 		// {data,width,height} pixels, not a canvas/ImageBitmap -- CubeTexture
 		// (and WebGL's texSubImage2D under it) needs an actual image source,
 		// so paint the decoded pixels onto a canvas ourselves.
-		_loader.load( url, ( texture ) => resolve( _imageDataToCanvas( texture.image ) ), undefined,
-			() => reject( new Error( url + ' not found' ) ) );
+		const image = _loader.parse( buffer );
+		return _imageDataToCanvas( image );
 
-	} ) );
+	} )() );
 
 	return Promise.all( loads ).then( ( images ) => {
 

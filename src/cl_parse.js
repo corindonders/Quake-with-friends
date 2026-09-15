@@ -363,7 +363,17 @@ export function CL_ParseServerInfo() {
 	if ( nummodels > 1 && COM_FindFile( model_precache[ 1 ] ) === null ) {
 
 		Con_Printf( 'Fetching %s...\n', model_precache[ 1 ] );
-		COM_EnsureFile( model_precache[ 1 ] ).then( ( success ) => {
+
+		// Optional colored-lighting companion (see Mod_LoadLighting in
+		// gl_model.js) -- fetched alongside the .bsp itself so it's already
+		// in the pak/virtualFiles cache by the time Mod_LoadBrushModel reads
+		// it synchronously. Most maps don't have one, so its failure is fine.
+		const litName = model_precache[ 1 ].replace( /\.bsp$/i, '.lit' );
+
+		Promise.all( [
+			COM_EnsureFile( model_precache[ 1 ] ),
+			COM_EnsureFile( litName ),
+		] ).then( ( [ success ] ) => {
 
 			if ( success ) {
 

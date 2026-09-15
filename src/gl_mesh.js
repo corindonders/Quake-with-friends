@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Con_Printf, Con_DPrintf } from './common.js';
 import { cl } from './client.js';
 import { R_GetPlayerSkinTexture } from './gl_rmisc.js';
-import { gl_nocolors } from './glquake.js';
+import { gl_nocolors, r_lerpmodels } from './glquake.js';
 import { r_avertexnormals } from './anorm_dots.js';
 
 /*
@@ -668,12 +668,39 @@ export function R_DrawAliasModel( entity, paliashdr, shadedots, shadelight ) {
 	// When pose or model changes, swap to the new template's shared attributes
 	if ( entity._aliasPosenum !== posenum || entity._aliasPaliashdr !== paliashdr ) {
 
-		geometry.setAttribute( 'position', template.posAttr );
+		// Modern-source-port-style frame blending (r_lerpmodels): vanilla
+		// QuakeC only ever hard-cuts between poses (~10fps for most monster/
+		// player animation), which is authentic but choppy by today's
+		// standards. Same model as the outgoing pose -> keep it as the lerp
+		// start point and estimate how long to blend over from how long the
+		// *previous* pose was held (QuakeSpasm does the same thing, since
+		// the client has no other way to know the server's frame timing).
+		const sameModel = entity._aliasPaliashdr === paliashdr;
+		const prevTemplate = ( r_lerpmodels.value !== 0 && sameModel )
+			? GL_DrawAliasFrame( paliashdr, entity._aliasPosenum )
+			: null;
+
+		if ( prevTemplate && prevTemplate.vertexCount === template.vertexCount ) {
+
+			const now = cl ? cl.time : 0;
+			const held = entity._aliasFrameChangeTime !== undefined ? now - entity._aliasFrameChangeTime : 0;
+			entity._aliasLerpDuration = Math.min( Math.max( held, 0.02 ), 0.25 );
+			entity._aliasLerpStart = now;
+			entity._aliasPrevTemplate = prevTemplate;
+
+		} else {
+
+			entity._aliasPrevTemplate = null;
+
+		}
+
+		entity._aliasFrameChangeTime = cl ? cl.time : 0;
+
 		geometry.setAttribute( 'normal', template.normalAttr );
 		geometry.setAttribute( 'uv', template.uvAttr );
 		geometry.setIndex( template.indices );
 
-		// Resize color buffer if vertex count changed between poses
+		// Resize color/lerp buffers if vertex count changed between poses
 		if ( entity._aliasColorArray.length < template.vertexCount * 3 ) {
 
 			entity._aliasColorArray = new Float32Array( template.vertexCount * 3 );
@@ -681,8 +708,61 @@ export function R_DrawAliasModel( entity, paliashdr, shadedots, shadelight ) {
 
 		}
 
+		if ( entity._aliasPrevTemplate && ( ! entity._aliasLerpArray || entity._aliasLerpArray.length < template.vertexCount * 3 ) ) {
+
+			entity._aliasLerpArray = new Float32Array( template.vertexCount * 3 );
+
+		}
+
+		if ( ! entity._aliasPrevTemplate ) {
+
+			// No blend in progress (first draw, model change, or disabled) --
+			// use the shared static template directly, same as before this
+			// feature existed.
+			geometry.setAttribute( 'position', template.posAttr );
+
+		}
+
 		entity._aliasPosenum = posenum;
 		entity._aliasPaliashdr = paliashdr;
+
+	}
+
+	// Advance an in-progress blend every frame it's drawn, independent of
+	// whether the pose changed *this* frame -- a blend started a couple
+	// frames ago still needs updating on the frames in between.
+	if ( entity._aliasPrevTemplate ) {
+
+		const now = cl ? cl.time : 0;
+		const t = entity._aliasLerpDuration > 0
+			? Math.min( Math.max( ( now - entity._aliasLerpStart ) / entity._aliasLerpDuration, 0 ), 1 )
+			: 1;
+
+		if ( t >= 1 ) {
+
+			geometry.setAttribute( 'position', template.posAttr );
+			entity._aliasPrevTemplate = null;
+
+		} else {
+
+			const from = entity._aliasPrevTemplate.posAttr.array;
+			const to = template.posAttr.array;
+			const out = entity._aliasLerpArray;
+
+			for ( let i = 0, n = template.vertexCount * 3; i < n; i ++ )
+				out[ i ] = from[ i ] + ( to[ i ] - from[ i ] ) * t;
+
+			if ( ! geometry.attributes.position || geometry.attributes.position.array !== out ) {
+
+				geometry.setAttribute( 'position', new THREE.BufferAttribute( out, 3 ) );
+
+			} else {
+
+				geometry.attributes.position.needsUpdate = true;
+
+			}
+
+		}
 
 	}
 

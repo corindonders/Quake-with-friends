@@ -90,10 +90,12 @@ export async function createUser( username: string, password: string, isAdmin = 
 
 export async function deleteUser( username: string ): Promise<boolean> {
 
-	const key = [ 'users', username.toLowerCase() ];
+	const normalized = username.toLowerCase();
+	const key = [ 'users', normalized ];
 	const existing = await kv.get( key );
 	if ( existing.value == null ) return false;
 	await kv.delete( key );
+	await revokeSessionsForUser( normalized );
 	return true;
 
 }
@@ -195,6 +197,25 @@ export async function verifySession( token: string ): Promise<{ username: string
 export async function revokeSession( token: string ): Promise<void> {
 
 	await kv.delete( [ 'sessions', token ] );
+
+}
+
+/**
+ * Deletes every outstanding session for a (lowercase, normalized) username.
+ * Sessions have no secondary index back to their owner -- there's no
+ * "sessions/<user>/..." key, just "sessions/<token>" -- so this scans the
+ * whole sessions prefix. Fine at this project's scale (a handful of
+ * friends, not thousands of concurrent logins); called from deleteUser so
+ * a removed account's outstanding tokens stop working immediately instead
+ * of staying valid until their 30-day TTL expires on their own.
+ */
+async function revokeSessionsForUser( normalizedUsername: string ): Promise<void> {
+
+	for await ( const entry of kv.list<SessionRecord>( { prefix: [ 'sessions' ] } ) ) {
+
+		if ( entry.value.username === normalizedUsername ) await kv.delete( entry.key );
+
+	}
 
 }
 

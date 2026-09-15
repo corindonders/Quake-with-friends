@@ -5,7 +5,7 @@ import { Con_Printf } from './common.js';
 import { Cvar_RegisterVariable as Cvar_RegisterVariable_impl, Cvar_SetValue as Cvar_SetValue_impl } from './cvar.js';
 import { d_lightstylevalue, r_viewleaf, r_norefresh, r_lightmap,
 	r_fullbright, r_drawentities, r_drawviewmodel, r_shadows, r_shadowmaps,
-	r_mirroralpha, r_wateralpha, r_dynamic, r_novis, r_speeds, r_textureatlas,
+	r_mirroralpha, r_wateralpha, r_dynamic, r_lerpmodels, r_antialias, r_novis, r_speeds, r_textureatlas,
 	gl_clear, gl_texsort, gl_cull, gl_smoothmodels, gl_affinemodels,
 	gl_polyblend, gl_flashblend, gl_playermip, gl_nocolors,
 	gl_keeptjunctions, gl_reporttjunctions, gl_doubleeyes, gl_texturemode,
@@ -138,6 +138,8 @@ export function R_Init() {
 		_Cvar_RegisterVariable( r_mirroralpha );
 		_Cvar_RegisterVariable( r_wateralpha );
 		_Cvar_RegisterVariable( r_dynamic );
+		_Cvar_RegisterVariable( r_lerpmodels );
+		_Cvar_RegisterVariable( r_antialias );
 		_Cvar_RegisterVariable( r_novis );
 		_Cvar_RegisterVariable( r_speeds );
 		_Cvar_RegisterVariable( r_textureatlas );

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Quake with Friends — Admin — Rooms</title>
+	<link rel="icon" type="image/svg+xml" href="icon.svg">
+	<link rel="apple-touch-icon" href="icon.png">
+	<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+	<header>
+		<img src="icon.svg" alt="">
+		<h1><a href="admin.html">Admin</a></h1>
+		<nav>
+			<a href="admin_users.html">Users</a>
+			<a href="admin_maps.html">Maps</a>
+			<a href="admin_rooms.html" class="active">Rooms</a>
+		</nav>
+		<div class="links">
+			<a href="start.html">start</a>
+			<a href="wiki.html">wiki</a>
+			<a href="index.html">game</a>
+			<a href="#" id="logoutLink">log out</a>
+		</div>
+	</header>
+
+	<main>
+
+		<section>
+			<h2>Active Rooms</h2>
+			<table id="roomsTable">
+				<thead>
+					<tr><th>Room</th><th>Map</th><th>Mod</th><th>Players</th><th>Created</th><th></th></tr>
+				</thead>
+				<tbody id="roomsBody"></tbody>
+			</table>
+			<div id="roomsEmpty" class="empty" hidden>No active rooms.</div>
+		</section>
+
+	</main>
+
+	<div id="status"></div>
+
+	<script src="server-config.js"></script>
+	<script type="module">
+
+		import { requireAdminSession, logout } from './src/auth_client.js';
+		import { api, showStatus, escapeHTML, fmtDate } from './admin_common.js';
+
+		const session = requireAdminSession();
+
+		document.getElementById( 'logoutLink' ).addEventListener( 'click', ( e ) => { e.preventDefault(); logout(); } );
+
+		async function loadRooms() {
+
+			const { rooms } = await api( '/admin/api/rooms' );
+			const body = document.getElementById( 'roomsBody' );
+			const empty = document.getElementById( 'roomsEmpty' );
+
+			body.innerHTML = '';
+			empty.hidden = rooms.length > 0;
+
+			for ( const r of rooms.sort( ( a, b ) => b.createdAt - a.createdAt ) ) {
+
+				const tr = document.createElement( 'tr' );
+				tr.innerHTML = `
+					<td>${ escapeHTML( r.id ) }${ r.persistent ? ' <span class="badge hub">hub</span>' : '' }</td>
+					<td>${ escapeHTML( r.map ) }</td>
+					<td>${ escapeHTML( r.mod || '—' ) }</td>
+					<td>${ r.playerCount }/${ r.maxPlayers }</td>
+					<td>${ fmtDate( r.createdAt ) }</td>
+					<td></td>
+				`;
+
+				const actionsTd = tr.querySelector( 'td:last-child' );
+				const endBtn = document.createElement( 'button' );
+				endBtn.textContent = 'Terminate';
+				endBtn.className = 'danger';
+				endBtn.disabled = r.persistent;
+				endBtn.addEventListener( 'click', () => terminateRoom( r.id ) );
+				actionsTd.appendChild( endBtn );
+
+				body.appendChild( tr );
+
+			}
+
+		}
+
+		async function terminateRoom( id ) {
+
+			if ( ! confirm( 'Terminate room ' + id + '? Anyone still in it will be disconnected.' ) ) return;
+
+			try {
+
+				await api( '/admin/api/rooms/' + encodeURIComponent( id ), { method: 'DELETE' } );
+				showStatus( 'Terminated ' + id + '.' );
+				loadRooms();
+
+			} catch ( e ) {
+
+				showStatus( e.message, true );
+
+			}
+
+		}
+
+		if ( session !== null ) {
+
+			loadRooms().catch( ( e ) => showStatus( e.message, true ) );
+			setInterval( () => loadRooms().catch( () => {} ), 15000 );
+
+		}
+
+	</script>
+
+</body>
+</html>

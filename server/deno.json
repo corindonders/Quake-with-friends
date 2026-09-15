@@ -13,6 +13,11 @@
 	"imports": {
 		"@std/path": "jsr:@std/path@^1",
 		"three": "./browser_shim.js",
-		"three/addons/loaders/TGALoader.js": "./tga_addon_shim.js"
+		"three/addons/loaders/TGALoader.js": "./tga_addon_shim.js",
+		"three/addons/postprocessing/EffectComposer.js": "./postprocess_addon_shim.js",
+		"three/addons/postprocessing/RenderPass.js": "./postprocess_addon_shim.js",
+		"three/addons/postprocessing/ShaderPass.js": "./postprocess_addon_shim.js",
+		"three/addons/postprocessing/OutputPass.js": "./postprocess_addon_shim.js",
+		"three/addons/shaders/FXAAShader.js": "./postprocess_addon_shim.js"
 	}
 }

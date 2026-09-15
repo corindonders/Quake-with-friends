@@ -117,6 +117,7 @@ export const BLOCK_HEIGHT = 1024;
 export const MAX_LIGHTMAPS = 64;
 
 const GL_LUMINANCE = 0x1909;
+const GL_RGB = 0x1907;
 const GL_ALPHA = 0x1906;
 const GL_INTENSITY = 0x8049;
 const GL_RGBA = 0x1908;
@@ -132,7 +133,9 @@ export function set_skytexturenum( v ) { skytexturenum = v; }
 let lightmap_bytes = 1; // 1, 2, or 4
 let lightmap_textures = 0;
 
-const blocklights = new Uint32Array( 18 * 18 );
+// 3 channels wide even for mono lightmaps (unused slots cost nothing) so
+// R_BuildLightMap's colored path below doesn't need a second buffer.
+const blocklights = new Uint32Array( 18 * 18 * 3 );
 
 // Cached buffers for R_AddDynamicLights (Golden Rule #4)
 const _dlight_impact = new Float32Array( 3 );
@@ -1265,9 +1268,10 @@ export function R_RenderDynamicLightmaps( fa ) {
 // R_AddDynamicLights
 //============================================================================
 
-export function R_AddDynamicLights( surf ) {
+export function R_AddDynamicLights( surf, channels ) {
 
 	if ( ! cl_dlights ) return;
+	channels = channels || 1;
 
 	const smax = ( surf.extents[ 0 ] >> 4 ) + 1;
 	const tmax = ( surf.extents[ 1 ] >> 4 ) + 1;
@@ -1317,8 +1321,23 @@ export function R_AddDynamicLights( surf ) {
 				else
 					dist = td + ( sd >> 1 );
 
-				if ( dist < minlight )
-					blocklights[ t * smax + s ] += ( ( rad - dist ) * 256 ) | 0;
+				if ( dist < minlight ) {
+
+					const add = ( ( rad - dist ) * 256 ) | 0;
+					const base = ( t * smax + s ) * channels;
+					if ( channels === 3 ) {
+
+						blocklights[ base ] += ( add * dl.color[ 0 ] ) | 0;
+						blocklights[ base + 1 ] += ( add * dl.color[ 1 ] ) | 0;
+						blocklights[ base + 2 ] += ( add * dl.color[ 2 ] ) | 0;
+
+					} else {
+
+						blocklights[ base ] += add;
+
+					}
+
+				}
 
 			}
 
@@ -1342,6 +1361,13 @@ export function R_BuildLightMap( surf, dest, destOffset, stride ) {
 	let lightmap = surf.samples;
 	let lightmapOffset = surf.sampleOffset || 0;
 
+	// Colored .lit data for this surface (see Mod_LoadLighting in
+	// gl_model.js) -- when present, blocklights is filled 3-wide (R,G,B per
+	// texel) instead of 1-wide, and dest gets 3 bytes/texel instead of 1.
+	const colored = !! surf.litsamples;
+	const channels = colored ? 3 : 1;
+	let litOffset = surf.litSampleOffset || 0;
+
 	surf.cached_dlight = ( surf.dlightframe === r_framecount );
 
 	// set to full bright if no light data
@@ -1350,13 +1376,13 @@ export function R_BuildLightMap( surf, dest, destOffset, stride ) {
 	// Surfaces with no samples but in a lit world should be dark, not fullbright.
 	if ( r_fullbright.value || ( cl.worldmodel != null && cl.worldmodel.lightdata == null ) ) {
 
-		for ( let i = 0; i < size; i ++ )
+		for ( let i = 0, n = size * channels; i < n; i ++ )
 			blocklights[ i ] = 255 * 256;
 
 	} else {
 
 		// clear to no light
-		for ( let i = 0; i < size; i ++ )
+		for ( let i = 0, n = size * channels; i < n; i ++ )
 			blocklights[ i ] = 0;
 
 		// add all the lightmaps
@@ -1366,8 +1392,26 @@ export function R_BuildLightMap( surf, dest, destOffset, stride ) {
 
 				const scale = d_lightstylevalue[ surf.styles[ maps ] ];
 				surf.cached_light[ maps ] = scale; // 8.8 fraction
-				for ( let i = 0; i < size; i ++ )
-					blocklights[ i ] += lightmap[ lightmapOffset + i ] * scale;
+
+				if ( colored ) {
+
+					for ( let i = 0; i < size; i ++ ) {
+
+						blocklights[ i * 3 ] += surf.litsamples[ litOffset + i * 3 ] * scale;
+						blocklights[ i * 3 + 1 ] += surf.litsamples[ litOffset + i * 3 + 1 ] * scale;
+						blocklights[ i * 3 + 2 ] += surf.litsamples[ litOffset + i * 3 + 2 ] * scale;
+
+					}
+
+					litOffset += size * 3;
+
+				} else {
+
+					for ( let i = 0; i < size; i ++ )
+						blocklights[ i ] += lightmap[ lightmapOffset + i ] * scale;
+
+				}
+
 				lightmapOffset += size; // skip to next lightmap
 
 			}
@@ -1376,13 +1420,12 @@ export function R_BuildLightMap( surf, dest, destOffset, stride ) {
 
 		// add all the dynamic lights
 		if ( surf.dlightframe === r_framecount )
-			R_AddDynamicLights( surf );
+			R_AddDynamicLights( surf, channels );
 
 	}
 
-	// bound, invert, and shift
-	// store as luminance (single byte per texel)
-	stride -= smax;
+	// bound, invert, and shift -- store as `channels` bytes/texel
+	stride -= smax * channels;
 	let bl = 0; // index into blocklights
 	let di = destOffset;
 
@@ -1390,11 +1433,14 @@ export function R_BuildLightMap( surf, dest, destOffset, stride ) {
 
 		for ( let j = 0; j < smax; j ++ ) {
 
-			let t = blocklights[ bl ++ ];
-			t >>= 7;
-			if ( t > 255 ) t = 255;
-			dest[ di ] = 255 - t;
-			di ++;
+			for ( let c = 0; c < channels; c ++ ) {
+
+				let t = blocklights[ bl ++ ];
+				t >>= 7;
+				if ( t > 255 ) t = 255;
+				dest[ di ++ ] = 255 - t;
+
+			}
 
 		}
 
@@ -2007,13 +2053,28 @@ export function R_BlendLightmaps() {
 				const dstData = tex.image.data;
 				const pixelCount = BLOCK_WIDTH * BLOCK_HEIGHT;
 
-				for ( let p = 0; p < pixelCount; p ++ ) {
+				if ( lightmap_bytes === 3 ) {
 
-					const val = 255 - lightmaps[ srcOffset + p ];
-					dstData[ p * 4 ] = val;
-					dstData[ p * 4 + 1 ] = val;
-					dstData[ p * 4 + 2 ] = val;
-					dstData[ p * 4 + 3 ] = 255;
+					for ( let p = 0; p < pixelCount; p ++ ) {
+
+						dstData[ p * 4 ] = 255 - lightmaps[ srcOffset + p * 3 ];
+						dstData[ p * 4 + 1 ] = 255 - lightmaps[ srcOffset + p * 3 + 1 ];
+						dstData[ p * 4 + 2 ] = 255 - lightmaps[ srcOffset + p * 3 + 2 ];
+						dstData[ p * 4 + 3 ] = 255;
+
+					}
+
+				} else {
+
+					for ( let p = 0; p < pixelCount; p ++ ) {
+
+						const val = 255 - lightmaps[ srcOffset + p ];
+						dstData[ p * 4 ] = val;
+						dstData[ p * 4 + 1 ] = val;
+						dstData[ p * 4 + 2 ] = val;
+						dstData[ p * 4 + 3 ] = 255;
+
+					}
 
 				}
 
@@ -2952,9 +3013,14 @@ export function GL_BuildLightmaps() {
 
 	set_r_framecount( 1 ); // no dlightcache
 
-	// set lightmap format -- use luminance (1 byte per texel)
-	gl_lightmap_format = GL_LUMINANCE;
-	lightmap_bytes = 1;
+	// Colored lightmaps (ericw-tools/TyrUtils .lit companion, see
+	// Mod_LoadLighting in gl_model.js) need 3 bytes/texel (RGB) instead of
+	// the classic 1 (luminance) -- everywhere else in this file already
+	// multiplies by lightmap_bytes when indexing into the shared `lightmaps`
+	// buffer, so this is the only format decision point.
+	const hasColoredLighting = !! ( cl_ref.worldmodel && cl_ref.worldmodel.litdata );
+	gl_lightmap_format = hasColoredLighting ? GL_RGB : GL_LUMINANCE;
+	lightmap_bytes = hasColoredLighting ? 3 : 1;
 
 	// build lightmaps for all brush models
 	const MAX_MODELS = 256;
@@ -3010,13 +3076,29 @@ export function GL_BuildLightmaps() {
 		const offset = i * BLOCK_WIDTH * BLOCK_HEIGHT * lightmap_bytes;
 		const pixelCount = BLOCK_WIDTH * BLOCK_HEIGHT;
 		const data = new Uint8Array( pixelCount * 4 );
-		for ( let p = 0; p < pixelCount; p ++ ) {
 
-			const val = 255 - lightmaps[ offset + p ];
-			data[ p * 4 ] = val;
-			data[ p * 4 + 1 ] = val;
-			data[ p * 4 + 2 ] = val;
-			data[ p * 4 + 3 ] = 255;
+		if ( lightmap_bytes === 3 ) {
+
+			for ( let p = 0; p < pixelCount; p ++ ) {
+
+				data[ p * 4 ] = 255 - lightmaps[ offset + p * 3 ];
+				data[ p * 4 + 1 ] = 255 - lightmaps[ offset + p * 3 + 1 ];
+				data[ p * 4 + 2 ] = 255 - lightmaps[ offset + p * 3 + 2 ];
+				data[ p * 4 + 3 ] = 255;
+
+			}
+
+		} else {
+
+			for ( let p = 0; p < pixelCount; p ++ ) {
+
+				const val = 255 - lightmaps[ offset + p ];
+				data[ p * 4 ] = val;
+				data[ p * 4 + 1 ] = val;
+				data[ p * 4 + 2 ] = val;
+				data[ p * 4 + 3 ] = 255;
+
+			}
 
 		}
 

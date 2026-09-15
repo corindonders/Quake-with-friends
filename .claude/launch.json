@@ -3,9 +3,15 @@
   "configurations": [
     {
       "name": "static",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8123"],
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["run", "--allow-net", "--allow-read", "server/nocache_static.ts"],
       "port": 8123
+    },
+    {
+      "name": "lobby",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["run", "--allow-net", "--allow-read", "--allow-write", "--allow-env", "--allow-run", "--unstable-net", "--unstable-kv", "--config", "server/deno.json", "server/lobby_server.js", "-port", "4433", "-pak", "C:/Users/Gebruiker/Documents/Web Projects/three-quake-main/pak0.pak", "-allow-origin", "*", "-verbose"],
+      "port": 4433
     }
   ]
 }

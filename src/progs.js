@@ -254,7 +254,13 @@ export function G_FUNCTION( o ) {
 
 export function PR_GetString( ofs ) {
 
-	if ( ofs < 0 || ofs >= pr_strings_data.length ) return '';
+	// null (not '') for an out-of-range offset: distinguishes a corrupt/invalid
+	// string pointer (C: NULL) from a legitimately empty string at a valid
+	// offset (C: a non-null pointer to "\0", e.g. offset 0 -- every progs.dat's
+	// string table starts with an empty string constant). Both are falsy in
+	// JS, so callers that need C's `!s` semantics (true only for NULL, not for
+	// "") must check `=== null` explicitly rather than relying on truthiness.
+	if ( ofs < 0 || ofs >= pr_strings_data.length ) return null;
 
 	let s = '';
 	for ( let i = ofs; i < pr_strings_data.length; i ++ ) {
